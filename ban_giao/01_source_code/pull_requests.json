@@ -1,0 +1,418 @@
+{
+  "repository": "hoanglongvbhp0703-sys/AI-TEACHING-ASSISTANT",
+  "strategy": "20 stacked draft pull requests; retarget next PR to main after parent merge",
+  "bootstrap_files": [
+    ".gitignore"
+  ],
+  "pull_requests": [
+    {
+      "number": 1,
+      "title": "[01/20] Cấu hình dự án và bộ khung Python",
+      "branch": "delivery/01-project-foundation",
+      "base": "main",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/01-project-foundation.md",
+      "files": [
+        ".env.example",
+        "app/__init__.py",
+        "app/api/__init__.py",
+        "app/api/routes/.gitkeep",
+        "app/api/routes/__init__.py",
+        "app/core/.gitkeep",
+        "app/core/__init__.py",
+        "app/core/clock.py",
+        "app/core/config.py",
+        "app/core/errors.py",
+        "app/db/__init__.py",
+        "app/db/migrations/__init__.py",
+        "app/db/migrations/versions/.gitkeep",
+        "app/db/migrations/versions/__init__.py",
+        "app/db/models/.gitkeep",
+        "app/db/models/__init__.py",
+        "app/integrations/.gitkeep",
+        "app/integrations/__init__.py",
+        "app/jobs/.gitkeep",
+        "app/jobs/__init__.py",
+        "app/rag/__init__.py",
+        "app/rag/evaluation/.gitkeep",
+        "app/rag/evaluation/__init__.py",
+        "app/rag/parsers/.gitkeep",
+        "app/rag/parsers/__init__.py",
+        "app/rag/prompts/.gitkeep",
+        "app/rag/schemas.py",
+        "app/repositories/.gitkeep",
+        "app/repositories/__init__.py",
+        "app/repositories/store.py",
+        "app/schemas/.gitkeep",
+        "app/schemas/__init__.py",
+        "app/schemas/common.py",
+        "app/services/.gitkeep",
+        "app/services/__init__.py",
+        "app/static/.gitkeep",
+        "examples/events/.gitkeep",
+        "examples/faq/.gitkeep",
+        "pyproject.toml",
+        "tests/acceptance/.gitkeep",
+        "tests/fixtures/.gitkeep",
+        "tests/integration/.gitkeep",
+        "tests/unit/.gitkeep"
+      ]
+    },
+    {
+      "number": 2,
+      "title": "[02/20] Schema SQLite và migrations",
+      "branch": "delivery/02-database-schema",
+      "base": "delivery/01-project-foundation",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/02-database-schema.md",
+      "files": [
+        "app/db/migrations/versions/0001_initial.sql",
+        "app/db/migrations/versions/0002_authentication.sql",
+        "app/db/migrations/versions/0003_class_rosters.sql",
+        "app/db/migrations/versions/0004_query_rewriting.sql",
+        "app/db/seed.py",
+        "app/db/session.py",
+        "docs/database/02-database-design.md",
+        "docs/database/03-data-dictionary.md",
+        "docs/database/04-authentication.md",
+        "docs/database/schema.sqlite.sql",
+        "docs/testing/schema-validation-results.md",
+        "scripts/init_local.py",
+        "scripts/validate_schema.py"
+      ]
+    },
+    {
+      "number": 3,
+      "title": "[03/20] Đăng nhập và bảo vệ thông tin",
+      "branch": "delivery/03-authentication",
+      "base": "delivery/02-database-schema",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/03-authentication.md",
+      "files": [
+        "app/api/deps.py",
+        "app/api/routes/auth.py",
+        "app/core/passwords.py",
+        "app/core/runtime_logging.py",
+        "app/core/security.py",
+        "app/schemas/auth.py",
+        "app/services/auth_service.py"
+      ]
+    },
+    {
+      "number": 4,
+      "title": "[04/20] Tài khoản, lớp và metadata học viên",
+      "branch": "delivery/04-accounts-classes",
+      "base": "delivery/03-authentication",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/04-accounts-classes.md",
+      "files": [
+        "app/api/routes/identity.py",
+        "app/schemas/identity.py",
+        "app/services/access_service.py",
+        "app/services/roster_service.py",
+        "docs/architecture/12-class-access-and-rosters.md"
+      ]
+    },
+    {
+      "number": 5,
+      "title": "[05/20] Quản lý tài liệu và phiên bản",
+      "branch": "delivery/05-document-management",
+      "base": "delivery/04-accounts-classes",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/05-document-management.md",
+      "files": [
+        "app/api/routes/documents.py",
+        "app/rag/parsers/files.py",
+        "app/schemas/documents.py",
+        "app/services/document_service.py"
+      ]
+    },
+    {
+      "number": 6,
+      "title": "[06/20] Webhook và xác thực kênh giả lập",
+      "branch": "delivery/06-webhook-security",
+      "base": "delivery/05-document-management",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/06-webhook-security.md",
+      "files": [
+        "app/integrations/connection_bridge.py",
+        "app/integrations/mock_zalo_adapter.py",
+        "app/schemas/connection.py",
+        "app/schemas/event.py",
+        "docs/contracts/09-webhook-design.md"
+      ]
+    },
+    {
+      "number": 7,
+      "title": "[07/20] Xử lý sự kiện, quota và shared memory",
+      "branch": "delivery/07-event-memory-quota",
+      "base": "delivery/06-webhook-security",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/07-event-memory-quota.md",
+      "files": [
+        "app/services/event_service.py",
+        "app/services/memory_service.py",
+        "app/services/quota_service.py"
+      ]
+    },
+    {
+      "number": 8,
+      "title": "[08/20] Handoff, ticket, FAQ và outbox",
+      "branch": "delivery/08-tickets-outbound",
+      "base": "delivery/07-event-memory-quota",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/08-tickets-outbound.md",
+      "files": [
+        "app/api/routes/tickets.py",
+        "app/schemas/handoff.py",
+        "app/services/outbound_service.py",
+        "app/services/ticket_service.py"
+      ]
+    },
+    {
+      "number": 9,
+      "title": "[09/20] Worker bền vững và retry",
+      "branch": "delivery/09-durable-worker",
+      "base": "delivery/08-tickets-outbound",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/09-durable-worker.md",
+      "files": [
+        "app/jobs/runner.py"
+      ]
+    },
+    {
+      "number": 10,
+      "title": "[10/20] Parsing, chunking và model local",
+      "branch": "delivery/10-parsing-local-models",
+      "base": "delivery/09-durable-worker",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/10-parsing-local-models.md",
+      "files": [
+        "app/rag/models.py",
+        "app/rag/parsers/structure.py"
+      ]
+    },
+    {
+      "number": 11,
+      "title": "[11/20] Retrieval và Claude trả lời có căn cứ",
+      "branch": "delivery/11-rag-grounded-answer",
+      "base": "delivery/10-parsing-local-models",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/11-rag-grounded-answer.md",
+      "files": [
+        "app/rag/backend.py",
+        "app/rag/local_backend.py",
+        "app/rag/provider.py",
+        "docs/architecture/10-rag-implementation.md",
+        "docs/architecture/16-claude-content-evidence.md"
+      ]
+    },
+    {
+      "number": 12,
+      "title": "[12/20] Query rewriting và tiến trình xử lý",
+      "branch": "delivery/12-rewrite-progress",
+      "base": "delivery/11-rag-grounded-answer",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/12-rewrite-progress.md",
+      "files": [
+        "app/api/routes/events.py",
+        "app/rag/query_rewriter.py",
+        "app/services/progress_service.py",
+        "docs/architecture/13-upload-and-rag-progress.md",
+        "docs/architecture/15-contextual-query-rewriting.md"
+      ]
+    },
+    {
+      "number": 13,
+      "title": "[13/20] Giao diện portal theo vai trò",
+      "branch": "delivery/13-portal-frontend",
+      "base": "delivery/12-rewrite-progress",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/13-portal-frontend.md",
+      "files": [
+        "app/static/portal.css",
+        "app/static/portal.html",
+        "app/static/portal.js"
+      ]
+    },
+    {
+      "number": 14,
+      "title": "[14/20] Giả lập Zalo và lắp ghép API",
+      "branch": "delivery/14-simulator-api-assembly",
+      "base": "delivery/13-portal-frontend",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/14-simulator-api-assembly.md",
+      "files": [
+        "app/api/routes/portal.py",
+        "app/api/routes/reports.py",
+        "app/main.py",
+        "app/simulator.py",
+        "app/static/mock_zalo.html",
+        "docs/contracts/08-api-implementation.md",
+        "docs/contracts/openapi.json"
+      ]
+    },
+    {
+      "number": 15,
+      "title": "[15/20] Lệnh khởi động và ví dụ webhook",
+      "branch": "delivery/15-demo-launchers",
+      "base": "delivery/14-simulator-api-assembly",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/15-demo-launchers.md",
+      "files": [
+        "examples/events/normalized-sample-events.json",
+        "examples/events/webhook-event.json",
+        "examples/faq/sample-processing-config.json",
+        "scripts/run_connection_demo.py",
+        "scripts/run_portal.py",
+        "scripts/run_rag.py",
+        "scripts/send_mock_event.py",
+        "scripts/smoke_local.py"
+      ]
+    },
+    {
+      "number": 16,
+      "title": "[16/20] Học liệu và công cụ dựng demo",
+      "branch": "delivery/16-sample-materials",
+      "base": "delivery/15-demo-launchers",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/16-sample-materials.md",
+      "files": [
+        "Machine Learning copy/ML-P1/L0-intro.pdf",
+        "Machine Learning copy/ML-P1/L1-introduction.pdf",
+        "Machine Learning copy/ML-P1/L1.2-data-mining.pdf",
+        "Machine Learning copy/ML-P1/L2-preprocess.pdf",
+        "Machine Learning copy/ML-P1/L3-linear-regression.pdf",
+        "Machine Learning copy/ML-P1/L4-5-clustering.pdf",
+        "Machine Learning copy/ML-P1/L6-model-assessment.pdf",
+        "Machine Learning copy/ML-P1/L7-KNN.pdf",
+        "Machine Learning copy/ML-P2/L10-neural-network.pdf",
+        "Machine Learning copy/ML-P2/L11-SVM.pdf",
+        "Machine Learning copy/ML-P2/L12-assoc-rules.pdf",
+        "Machine Learning copy/ML-P2/L8-random-forests.pdf",
+        "Machine Learning copy/ML-P2/L9-prob-model.pdf",
+        "Machine Learning copy/ML-P2/L9.1-pro-models-em.pdf",
+        "ban_giao/03_demo/GOS_IT3190_Golden_Dataset_40.jsonl",
+        "ban_giao/03_demo/README.md",
+        "ban_giao/03_demo/tai_lieu_mau/faq_machine_learning.json",
+        "ban_giao/03_demo/tai_lieu_mau/google_sheets_demo.docx",
+        "scripts/load_demo_documents.py"
+      ]
+    },
+    {
+      "number": 17,
+      "title": "[17/20] Kiểm thử Backend và luồng nghiệp vụ",
+      "branch": "delivery/17-backend-integration-tests",
+      "base": "delivery/16-sample-materials",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/17-backend-integration-tests.md",
+      "files": [
+        "tests/conftest.py",
+        "tests/integration/test_account_catalog.py",
+        "tests/integration/test_api.py",
+        "tests/integration/test_class_access.py",
+        "tests/integration/test_connection_demo.py",
+        "tests/integration/test_document_mvp.py",
+        "tests/integration/test_password_auth.py",
+        "tests/integration/test_portal.py",
+        "tests/integration/test_progress_and_logging.py",
+        "tests/integration/test_webhooks.py"
+      ]
+    },
+    {
+      "number": 18,
+      "title": "[18/20] Kiểm thử parser và RAG",
+      "branch": "delivery/18-rag-regression-tests",
+      "base": "delivery/17-backend-integration-tests",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/18-rag-regression-tests.md",
+      "files": [
+        "tests/integration/test_local_rag.py",
+        "tests/unit/test_query_context.py",
+        "tests/unit/test_rewrite_provider.py",
+        "tests/unit/test_structured_parsing.py"
+      ]
+    },
+    {
+      "number": 19,
+      "title": "[19/20] Golden evaluation và metric",
+      "branch": "delivery/19-golden-evaluation",
+      "base": "delivery/18-rag-regression-tests",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/19-golden-evaluation.md",
+      "files": [
+        "docs/architecture/17-content-evidence-evaluation.md",
+        "docs/architecture/18-golden-it3190-evaluation.md",
+        "docs/testing/11-rag-machine-learning-results.md",
+        "docs/testing/14-rag-runtime-diagnosis.md",
+        "scripts/compare_content_evidence.py",
+        "scripts/evaluate_golden.py",
+        "scripts/evaluate_rag.py",
+        "scripts/golden_metrics.py",
+        "tests/unit/test_golden_judge.py",
+        "tests/unit/test_golden_metrics.py"
+      ]
+    },
+    {
+      "number": 20,
+      "title": "[20/20] Hoàn thiện bộ bàn giao và hướng dẫn",
+      "branch": "delivery/20-handover-documentation",
+      "base": "delivery/19-golden-evaluation",
+      "draft": true,
+      "body_file": "ban_giao/01_source_code/pr_descriptions/20-handover-documentation.md",
+      "files": [
+        "README.md",
+        "app/api/routes/webhooks.py",
+        "ban_giao/01_source_code/PUBLICATION_CHECK.json",
+        "ban_giao/01_source_code/PULL_REQUESTS.md",
+        "ban_giao/01_source_code/README.md",
+        "ban_giao/01_source_code/pr_descriptions/01-project-foundation.md",
+        "ban_giao/01_source_code/pr_descriptions/02-database-schema.md",
+        "ban_giao/01_source_code/pr_descriptions/03-authentication.md",
+        "ban_giao/01_source_code/pr_descriptions/04-accounts-classes.md",
+        "ban_giao/01_source_code/pr_descriptions/05-document-management.md",
+        "ban_giao/01_source_code/pr_descriptions/06-webhook-security.md",
+        "ban_giao/01_source_code/pr_descriptions/07-event-memory-quota.md",
+        "ban_giao/01_source_code/pr_descriptions/08-tickets-outbound.md",
+        "ban_giao/01_source_code/pr_descriptions/09-durable-worker.md",
+        "ban_giao/01_source_code/pr_descriptions/10-parsing-local-models.md",
+        "ban_giao/01_source_code/pr_descriptions/11-rag-grounded-answer.md",
+        "ban_giao/01_source_code/pr_descriptions/12-rewrite-progress.md",
+        "ban_giao/01_source_code/pr_descriptions/13-portal-frontend.md",
+        "ban_giao/01_source_code/pr_descriptions/14-simulator-api-assembly.md",
+        "ban_giao/01_source_code/pr_descriptions/15-demo-launchers.md",
+        "ban_giao/01_source_code/pr_descriptions/16-sample-materials.md",
+        "ban_giao/01_source_code/pr_descriptions/17-backend-integration-tests.md",
+        "ban_giao/01_source_code/pr_descriptions/18-rag-regression-tests.md",
+        "ban_giao/01_source_code/pr_descriptions/19-golden-evaluation.md",
+        "ban_giao/01_source_code/pr_descriptions/20-handover-documentation.md",
+        "ban_giao/01_source_code/pull_requests.json",
+        "ban_giao/02_kien_truc/KIEN_TRUC.md",
+        "ban_giao/02_kien_truc/architecture.mmd",
+        "ban_giao/04_huong_dan/CAI_DAT_VA_VAN_HANH.md",
+        "ban_giao/04_huong_dan/GOOGLE_DOCS.md",
+        "ban_giao/04_huong_dan/images/01-khoi-tao-admin.png",
+        "ban_giao/04_huong_dan/images/02-hai-lop.png",
+        "ban_giao/04_huong_dan/images/03-tim-tai-khoan.png",
+        "ban_giao/04_huong_dan/images/04-gia-lap.png",
+        "ban_giao/06_kiem_thu/BAO_CAO_KIEM_THU.md",
+        "ban_giao/06_kiem_thu/bootstrap-check.json",
+        "ban_giao/06_kiem_thu/browser-check.json",
+        "ban_giao/06_kiem_thu/golden_results.csv",
+        "ban_giao/06_kiem_thu/golden_summary.json",
+        "ban_giao/06_kiem_thu/pytest-output.txt",
+        "ban_giao/06_kiem_thu/pytest-results.xml",
+        "ban_giao/06_kiem_thu/schema-validation.txt",
+        "ban_giao/06_kiem_thu/test-cases.csv",
+        "ban_giao/06_kiem_thu/test-cases.txt",
+        "ban_giao/07_van_hanh/CHI_PHI_VA_ZALO.md",
+        "ban_giao/README.md",
+        "docs/07-user-behavior-and-folder-responsibilities.md",
+        "docs/architecture/01-project-review.md",
+        "docs/architecture/04-folder-structure.md",
+        "docs/contracts/05-processing-contracts.md",
+        "docs/testing/06-acceptance-matrix.md"
+      ]
+    }
+  ]
+}

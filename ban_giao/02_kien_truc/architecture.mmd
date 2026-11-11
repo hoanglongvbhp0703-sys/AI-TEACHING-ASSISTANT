@@ -1,0 +1,26 @@
+flowchart TD
+    P[Portal: Admin / Giảng viên / Học viên] --> API[FastAPI API + Auth + ACL]
+    Z[Mock Zalo] --> W[Webhook: HMAC + Event ID]
+    W --> E[EventService: quyền lớp + quota + durable event]
+    API <--> DB[(SQLite: users/classes/events/memory/tickets/jobs)]
+    E <--> DB
+    API --> ING[DocumentService + Ingestion Worker]
+    ING --> PARSE[PDF/DOCX/XLSX/FAQ: parse + chunk]
+    PARSE --> EMB[BKAI Embedding]
+    EMB --> V[(Qdrant Local)]
+    ING --> ACTIVE[Index thành công: chuyển active version]
+    ACTIVE --> DB
+    E --> MEM[Shared Memory: 5 cặp / 30 phút]
+    MEM --> RW[Contextual Query Rewriting khi có history]
+    RW --> QE[BKAI Query Embedding]
+    QE --> RET[Qdrant: ACL + active version + Top 10]
+    V --> RET
+    RET --> RR[mMARCO Reranker: Top 5]
+    RR --> L[Claude: đọc toàn bộ Top 5 + đánh giá + sinh đáp án]
+    L --> D{sufficient?}
+    D -->|true| C[Backend xác minh citation và quyền]
+    D -->|false| H[Ticket giảng viên]
+    C -->|hợp lệ| O[Outbox + callback retry]
+    C -->|không hợp lệ| H
+    H --> O
+    O --> Z

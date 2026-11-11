@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "files_reviewed": 210,
+  "total_megabytes": 43.78,
+  "known_runtime_secrets_checked": 8,
+  "secret_matches": [],
+  "forbidden_paths": [],
+  "screenshots": "QA-only; manually inspected",
+  "video_included": false,
+  "delivery_pull_requests": 20
+}

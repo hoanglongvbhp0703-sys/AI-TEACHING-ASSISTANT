@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "isolated_data": true,
+  "workflows": [
+    "initial admin setup",
+    "two active classes",
+    "account role search",
+    "simulator class/student metadata"
+  ],
+  "javascript_errors": []
+}
