@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>GOS Academy · Cổng học tập</title>
+    <link rel="stylesheet" href="/portal-assets/portal.css" />
+    <script src="/portal-assets/portal.js" defer></script>
+  </head>
+  <body>
+    <section id="login" class="login-shell" hidden>
+      <div class="login-intro">
+        <span class="eyebrow">GOS ACADEMY</span>
+        <h1>Một nơi để học tập<br />và quản lý lớp.</h1>
+        <p>Theo dõi lớp học, quản lý học liệu và kết nối với giảng viên.</p>
+        <div class="intro-lines">
+          <span>01 &nbsp; Lớp học của bạn</span
+          ><span>02 &nbsp; Học liệu tập trung</span
+          ><span>03 &nbsp; Hỗ trợ từ giảng viên</span>
+        </div>
+      </div>
+      <div class="login-card">
+        <div class="brand-icon">G</div>
+        <h2 id="login-title">Chào mừng trở lại</h2>
+        <p class="muted" id="login-description">
+          Đăng nhập bằng tài khoản và mật khẩu của bạn.
+        </p>
+        <form id="login-form">
+          <div class="field" id="login-role-field">
+            <label for="login-role">Vai trò</label
+            ><select id="login-role">
+              <option value="admin">Quản trị viên</option>
+              <option value="teacher">Giảng viên</option>
+              <option value="student">Học viên</option>
+            </select>
+          </div>
+          <div class="field" id="login-class-field" hidden>
+            <label for="login-class">Lớp học</label
+            ><select id="login-class"></select>
+          </div>
+          <div class="field" id="login-profile-field" hidden>
+            <label for="login-profile">Hồ sơ đăng nhập</label
+            ><select id="login-profile"></select
+            ><small
+              >Hồ sơ và quyền lớp do quản trị viên cấp. Học viên được đánh số
+              riêng trong từng lớp.</small
+            >
+          </div>
+
+          <div class="field" id="setup-name-field" hidden>
+            <label for="setup-name">Tên hiển thị của quản trị viên</label
+            ><input
+              id="setup-name"
+              value="Quản trị viên"
+              maxlength="200"
+              autocomplete="name"
+            />
+          </div>
+          <div class="field" id="username-field">
+            <label for="username">Tên đăng nhập</label
+            ><input
+              id="username"
+              required
+              minlength="3"
+              maxlength="64"
+              pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,63}"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              placeholder="Tên đăng nhập của bạn"
+            />
+          </div>
+          <div class="field">
+            <label for="password">Mật khẩu</label
+            ><input
+              id="password"
+              required
+              type="password"
+              autocomplete="current-password"
+              maxlength="1024"
+            />
+          </div>
+          <div class="field" id="confirm-password-field" hidden>
+            <label for="password-confirm">Nhập lại mật khẩu</label
+            ><input
+              id="password-confirm"
+              type="password"
+              autocomplete="new-password"
+              minlength="15"
+              maxlength="128"
+            /><small
+              >Mật khẩu mới tối thiểu 15 ký tự, có thể dùng một cụm từ
+              dài.</small
+            >
+          </div>
+          <button class="primary wide" id="login-button">Đăng nhập</button>
+          <p id="login-error" class="error-text" role="alert"></p>
+        </form>
+        <p class="login-note">
+          Tài khoản do quản trị viên cấp. Nếu chưa có tài khoản hoặc quên mật
+          khẩu, hãy liên hệ quản trị viên.
+        </p>
+      </div>
+    </section>
+
+    <div id="workspace" class="workspace" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#overview"
+          ><span class="brand-icon">G</span
+          ><span>GOS Academy<small>CỔNG HỌC TẬP</small></span></a
+        >
+        <div class="nav-label">KHÔNG GIAN LÀM VIỆC</div>
+        <nav id="navigation" aria-label="Điều hướng chính"></nav>
+        <div class="sidebar-footer">
+          <span class="live-dot"></span> Dữ liệu từ hệ thống
+          <div id="rag-sidebar-status">Đang kiểm tra RAG</div>
+        </div>
+      </aside>
+      <div class="main-shell">
+        <header class="topbar">
+          <div>
+            <span class="breadcrumb">Không gian làm việc</span>
+            <h1 id="page-title">Tổng quan</h1>
+          </div>
+          <div class="user-bar">
+            <button class="subtle" id="refresh-button" title="Tải lại dữ liệu">
+              ↻ <span>Làm mới</span></button
+            ><span id="user-name"></span
+            ><span class="role-badge" id="user-role"></span
+            ><button class="subtle" data-action="changePassword">
+              Đổi mật khẩu</button
+            ><button class="subtle" id="logout-button">Đăng xuất</button>
+          </div>
+        </header>
+        <section
+          id="upload-progress-panel"
+          class="operation-progress"
+          aria-live="polite"
+          hidden
+        >
+          <strong id="upload-progress-title">Tiến trình tài liệu</strong>
+          <label for="upload-transfer-bar" id="upload-transfer-label"
+            >Đang truyền file</label
+          >
+          <progress id="upload-transfer-bar" max="100" value="0"></progress>
+          <label for="upload-index-bar" id="upload-index-label"
+            >Đang chờ lập chỉ mục</label
+          >
+          <progress id="upload-index-bar" max="100" value="0"></progress>
+          <small id="upload-progress-detail"
+            >Tiến trình index theo công đoạn, không phải thời gian còn
+            lại.</small
+          >
+        </section>
+        <main id="content" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <dialog id="dialog">
+      <div class="dialog-head">
+        <h2 id="dialog-title"></h2>
+        <button
+          type="button"
+          class="icon-button"
+          id="dialog-close"
+          aria-label="Đóng"
+        >
+          ×
+        </button>
+      </div>
+      <form id="dialog-form">
+        <div id="dialog-body"></div>
+        <p id="dialog-error" class="error-text" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="dialog-cancel">
+            Đóng</button
+          ><button class="primary" id="dialog-submit">Lưu</button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <noscript>Vui lòng bật JavaScript để sử dụng cổng học tập.</noscript>
+  </body>
+</html>
