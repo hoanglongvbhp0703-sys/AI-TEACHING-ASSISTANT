@@ -1,0 +1,5 @@
+{
+  "parser_revision": "parser-v1",
+  "chunk_size": 1024,
+  "chunk_overlap": 128
+}
