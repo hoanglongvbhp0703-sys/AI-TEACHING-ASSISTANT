@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "fresh_isolated_database": true,
+  "corpus_by_class": [
+    {
+      "class_id": "GS-KPI-01",
+      "documents": 1,
+      "chunks": 4
+    },
+    {
+      "class_id": "ML-DEMO-01",
+      "documents": 14,
+      "chunks": 594
+    }
+  ],
+  "provider_generation_calls": 0,
+  "foreign_key_errors": 0
+}

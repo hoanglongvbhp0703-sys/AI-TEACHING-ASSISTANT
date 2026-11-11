@@ -1,0 +1,82 @@
+{
+  "dataset_sha256": "d8e24647e32ed2e238c0c2e6e150cd365e19425cd5e7f9719692da3b4890185a",
+  "models": {
+    "embedding": "bkai-foundation-models/vietnamese-bi-encoder",
+    "reranker": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+    "generator": "claude-sonnet-4.6",
+    "judge": "claude-sonnet-4.6"
+  },
+  "metrics": {
+    "cases": 40,
+    "answerable_cases": 26,
+    "recall_at_5_page_proxy": 0.8076923076923077,
+    "file_hit_at_5": 0.9230769230769231,
+    "answer_correctness": 0.7038461538461539,
+    "correctness_denominator": 26,
+    "correctness_unjudged_answer_ids": [],
+    "faithfulness": 1.0,
+    "faithfulness_claims": 55,
+    "citation_faithfulness": 1.0,
+    "citation_links": 57,
+    "judged_answer_count": 19,
+    "unjudged_answer_ids": [],
+    "answerability": {
+      "tp": 19,
+      "fp": 0,
+      "fn": 5,
+      "tn": 13,
+      "precision": 1.0,
+      "recall": 0.7916666666666666,
+      "f1": 0.8837209302325582,
+      "evaluated": 37,
+      "technical_error_ids": [
+        "GOS-IT3190-012",
+        "GOS-IT3190-015",
+        "GOS-IT3190-035"
+      ]
+    },
+    "answerability_end_to_end": {
+      "tp": 19,
+      "fp": 0,
+      "fn": 7,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.7307692307692307,
+      "f1": 0.8444444444444444,
+      "evaluated": 40,
+      "note": "answered is the only positive prediction; a negative-label technical error is a non-answer, not proof of a safe refusal."
+    },
+    "behavior_accuracy": 0.675,
+    "behavior_mismatch_ids": [
+      "GOS-IT3190-012",
+      "GOS-IT3190-014",
+      "GOS-IT3190-015",
+      "GOS-IT3190-017",
+      "GOS-IT3190-023",
+      "GOS-IT3190-031",
+      "GOS-IT3190-032",
+      "GOS-IT3190-033",
+      "GOS-IT3190-034",
+      "GOS-IT3190-035",
+      "GOS-IT3190-037",
+      "GOS-IT3190-038",
+      "GOS-IT3190-039"
+    ]
+  },
+  "metadata": {
+    "platform": "mock_zalo",
+    "group_id": "ZGROUP_ML01",
+    "class_id": "ML-DEMO-01",
+    "course_id": "ML-DEMO",
+    "history_policy": "Independent sessions; only dataset-provided history seeded through Memory Service"
+  },
+  "metadata_verification": {
+    "events_checked": 40,
+    "all_events_match": true,
+    "actual_source_scopes": [
+      "class:ML-DEMO-01"
+    ],
+    "all_sources_authorized_and_active": true
+  },
+  "finished_at": "2026-11-11T16:09:26.823045+00:00"
+}

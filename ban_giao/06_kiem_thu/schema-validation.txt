@@ -1,0 +1,24 @@
+Design DDL validation — SQLite 3.53.4
+test_active_version_must_belong_to_same_document (__main__.SchemaTests.test_active_version_must_belong_to_same_document) ... ok
+test_binding_cannot_change_class_or_resolve_wrong_class (__main__.SchemaTests.test_binding_cannot_change_class_or_resolve_wrong_class) ... ok
+test_chunk_scope_must_be_in_document_access (__main__.SchemaTests.test_chunk_scope_must_be_in_document_access) ... ok
+test_event_dedup_is_by_external_id_not_question (__main__.SchemaTests.test_event_dedup_is_by_external_id_not_question) ... ok
+test_failed_version_cannot_replace_current_active (__main__.SchemaTests.test_failed_version_cannot_replace_current_active) ... ok
+test_faq_approval_requires_actor_document_and_timestamp (__main__.SchemaTests.test_faq_approval_requires_actor_document_and_timestamp) ... ok
+test_hash_can_repeat_for_restore_version (__main__.SchemaTests.test_hash_can_repeat_for_restore_version) ... ok
+test_invalid_json_and_status_are_rejected (__main__.SchemaTests.test_invalid_json_and_status_are_rejected) ... ok
+test_memory_cannot_join_another_groups_event (__main__.SchemaTests.test_memory_cannot_join_another_groups_event) ... ok
+test_missing_identity_reference_is_rejected (__main__.SchemaTests.test_missing_identity_reference_is_rejected) ... ok
+test_only_one_live_ingestion_job_per_version (__main__.SchemaTests.test_only_one_live_ingestion_job_per_version) ... ok
+test_provider_calls_keep_unknown_cost_and_have_one_owner (__main__.SchemaTests.test_provider_calls_keep_unknown_cost_and_have_one_owner) ... ok
+test_quota_concurrent_connections_cannot_both_take_30th_slot (__main__.SchemaTests.test_quota_concurrent_connections_cannot_both_take_30th_slot) ... ok
+test_quota_release_only_once_and_event_reserves_only_once (__main__.SchemaTests.test_quota_release_only_once_and_event_reserves_only_once) ... ok
+test_schema_has_30_tables_and_fk_enabled (__main__.SchemaTests.test_schema_has_30_tables_and_fk_enabled) ... ok
+test_scope_must_resolve_real_resource_and_canonical_id (__main__.SchemaTests.test_scope_must_resolve_real_resource_and_canonical_id) ... ok
+test_ticket_run_and_outbox_are_idempotent (__main__.SchemaTests.test_ticket_run_and_outbox_are_idempotent) ... ok
+test_version_switch_and_revoke_are_atomic (__main__.SchemaTests.test_version_switch_and_revoke_are_atomic) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.127s
+
+OK
