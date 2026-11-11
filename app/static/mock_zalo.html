@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Giả lập nhóm chat · Kiểm tra webhook</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f1f5f9;
+        color: #162337;
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      header {
+        padding: 22px 28px;
+        background: #102b4e;
+        color: white;
+      }
+      header p {
+        margin: 4px 0;
+        color: #c5d5e8;
+      }
+      h1 {
+        margin: 0;
+        font-size: 23px;
+      }
+      main {
+        max-width: 1180px;
+        margin: 24px auto;
+        padding: 0 20px;
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 20px;
+      }
+      .panel {
+        background: white;
+        border: 1px solid #dbe3ed;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .bar {
+        padding: 16px 20px;
+        border-bottom: 1px solid #e6ecf3;
+        font-weight: 650;
+      }
+      .settings {
+        display: flex;
+        gap: 12px;
+        padding: 14px 20px;
+        background: #f8fafc;
+      }
+      .settings label {
+        flex: 1;
+        font-size: 12px;
+        color: #53677c;
+      }
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+      select,
+      textarea {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccd8e5;
+        border-radius: 7px;
+        background: white;
+        color: #162337;
+      }
+      #feed {
+        min-height: 250px;
+        max-height: 470px;
+        overflow: auto;
+        padding: 20px;
+      }
+      .empty {
+        color: #6e8093;
+        text-align: center;
+        padding: 45px 10px;
+      }
+      .message {
+        margin: 0 0 22px;
+      }
+      .bubble {
+        padding: 12px 15px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #e9f2ff;
+        margin-left: 40px;
+      }
+      .reply {
+        background: #e9f7f0;
+        margin: 10px 40px 0 0;
+      }
+      .meta {
+        font-size: 11px;
+        color: #64758a;
+        margin: 5px 2px;
+        overflow-wrap: anywhere;
+      }
+      .error {
+        color: #b42318;
+      }
+      form {
+        border-top: 1px solid #e6ecf3;
+        padding: 16px 20px;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 76px;
+      }
+      button {
+        cursor: pointer;
+        border: 0;
+        border-radius: 7px;
+        padding: 9px 15px;
+        background: #1767d1;
+        color: white;
+        font-weight: 600;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 10px;
+        gap: 10px;
+      }
+      .hint {
+        font-size: 12px;
+        color: #64758a;
+      }
+      .retry {
+        background: #eef3f9;
+        color: #315171;
+        font-size: 11px;
+        padding: 5px 8px;
+        margin-top: 6px;
+      }
+      .trace {
+        padding: 18px 20px;
+      }
+      .step {
+        padding: 10px 0;
+        border-bottom: 1px solid #edf1f6;
+        display: flex;
+        gap: 10px;
+      }
+      .dot {
+        width: 23px;
+        height: 23px;
+        flex-shrink: 0;
+        background: #e8edf3;
+        border-radius: 50%;
+        text-align: center;
+        font-size: 13px;
+        color: #687c93;
+      }
+      .ok {
+        background: #d8f2e3;
+        color: #18743c;
+      }
+      .bad {
+        background: #fee4e2;
+        color: #b42318;
+      }
+      details {
+        margin-top: 15px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      pre {
+        background: #f5f7fb;
+        padding: 12px;
+        max-height: 280px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font:
+          12px/1.5 ui-monospace,
+          monospace;
+        border-radius: 7px;
+      }
+      .notice {
+        padding: 12px 20px;
+        background: #fff8e7;
+        color: #7c5a18;
+        font-size: 12px;
+      }
+      #status {
+        margin: 8px 0;
+        color: #64758a;
+        font-size: 12px;
+      }
+      .link {
+        font-size: 12px;
+        color: #c5d5e8;
+      }
+      @media (max-width: 760px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+        header {
+          padding: 18px 20px;
+        }
+        .settings {
+          flex-direction: column;
+        }
+      }
+      .rag-progress {
+        padding: 10px 0;
+      }
+      .rag-progress progress {
+        width: 100%;
+        height: 12px;
+        accent-color: #2563eb;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Giả lập nhóm chat</h1>
+      <p>Giả lập → Webhook hệ thống → Callback giả lập</p>
+      <span class="link">Gửi tin và nhận xác nhận kết nối từ hệ thống</span>
+    </header>
+    <main>
+      <section class="panel">
+        <div class="bar">Tin nhắn thử nghiệm</div>
+        <div class="settings">
+          <label
+            >Nhóm<select id="group">
+              <option value="">Đang đọc metadata lớp…</option>
+            </select></label
+          ><label>Người gửi<select id="sender"></select></label>
+        </div>
+        <div id="feed">
+          <div class="empty">Nhập tin nhắn bên dưới để bắt đầu kiểm tra.</div>
+        </div>
+        <form id="composer">
+          <textarea
+            id="text"
+            maxlength="8000"
+            required
+            placeholder="Ví dụ: Xin chào, kiểm tra kết nối webhook"
+          ></textarea>
+          <div class="actions">
+            <span class="hint">Enter để gửi · Shift+Enter xuống dòng</span
+            ><button id="send">Gửi tin nhắn</button>
+          </div>
+          <div id="status" role="status">Chưa gửi tin nhắn.</div>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="bar">Theo dõi đường đi của gói tin</div>
+        <div class="notice" id="mode-note">Đang kiểm tra chế độ hệ thống…</div>
+        <div class="trace">
+          <div id="steps"></div>
+          <details open>
+            <summary>1. Gói JSON gửi tới webhook</summary>
+            <pre id="payload">Chưa có dữ liệu.</pre>
+          </details>
+          <details>
+            <summary>2. HTTP response từ webhook</summary>
+            <pre id="receipt">Chưa có dữ liệu.</pre>
+          </details>
+          <details open>
+            <summary>3. API callback về giả lập</summary>
+            <pre id="callback">Đang chờ callback.</pre>
+          </details>
+        </div>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let busy = false;
+      let businessMode = false;
+      let catalog = [];
+      let refreshSequence = 0;
+      function clearGroupView() {
+        refreshSequence++;
+        $("feed").replaceChildren(
+          node("div", "empty", "Chưa có tin nhắn trong nhóm này."),
+        );
+        for (const id of ["payload", "receipt", "callback"])
+          $(id).textContent = "Chưa có dữ liệu.";
+        $("steps").replaceChildren();
+        $("status").textContent = "Chưa có tin nhắn trong nhóm này.";
+      }
+      $("group").onchange = () => {
+        clearGroupView();
+        const group = catalog.find(
+          (g) => g.external_group_id === $("group").value,
+        );
+        $("sender").replaceChildren(
+          ...(group?.students || []).map(
+            (student) => new Option(student.label, student.sender_id),
+          ),
+        );
+        $("send").disabled = busy || !$("sender").value;
+        refresh().catch((e) => ($("status").textContent = e.message));
+      };
+      function node(tag, cls, text) {
+        const e = document.createElement(tag);
+        e.className = cls;
+        e.textContent = text;
+        return e;
+      }
+      function pretty(value) {
+        return value ? JSON.stringify(value, null, 2) : "Chưa có dữ liệu.";
+      }
+      function render(items) {
+        items = items.filter(
+          (item) => item.payload.group_id === $("group").value,
+        );
+        const feed = $("feed");
+        const atBottom =
+          feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+        feed.replaceChildren();
+        if (!items.length) {
+          clearGroupView();
+          feed.replaceChildren();
+          feed.append(
+            node("div", "empty", "Nhập tin nhắn bên dưới để bắt đầu kiểm tra."),
+          );
+          return;
+        }
+        for (const item of items) {
+          const row = node("div", "message", "");
+          row.append(
+            node(
+              "div",
+              "meta",
+              item.payload.sender_id + " · " + item.payload.group_id,
+            ),
+          );
+          row.append(node("div", "bubble", item.payload.message.text));
+          row.append(node("div", "meta", "Event: " + item.event_id));
+          if (businessMode && item.progress) {
+            const p = item.progress;
+            const progressRow = node("div", "rag-progress", "");
+            const label = node(
+              "div",
+              "meta" + (p.status === "failed" ? " error" : ""),
+              "RAG: " + p.label + " · " + p.percent + "%",
+            );
+            const bar = document.createElement("progress");
+            bar.max = 100;
+            bar.value = p.percent;
+            bar.setAttribute("aria-label", "Tiến trình RAG");
+            const detail = node(
+              "div",
+              "meta",
+              "Tiến trình theo công đoạn" +
+                (p.rewrite_called === true ? " · Đã gọi model rewrite" : "") +
+                (p.llm_called === true
+                  ? " · Đã gọi LLM trả lời"
+                  : p.llm_called === false
+                    ? " · Chưa gọi LLM trả lời"
+                    : "") +
+                (p.error_code ? " · " + p.error_code : ""),
+            );
+            progressRow.append(label, bar, detail);
+            row.append(progressRow);
+          }
+          if (item.callback)
+            row.append(node("div", "bubble reply", item.callback.text));
+          if (item.error) row.append(node("div", "meta error", item.error));
+          const retry = node("button", "retry", "Gửi lại cùng event ID");
+          retry.type = "button";
+          retry.disabled = busy || item.sending;
+          retry.onclick = () =>
+            send(
+              "/api/mock/messages/" +
+                encodeURIComponent(item.event_id) +
+                "/retry?group_id=" +
+                encodeURIComponent($("group").value),
+            );
+          row.append(retry);
+          feed.append(row);
+        }
+        if (atBottom) feed.scrollTop = feed.scrollHeight;
+        const item = items[items.length - 1],
+          receipt = item.receipt?.data;
+        $("payload").textContent = pretty(item.payload);
+        $("receipt").textContent = pretty(item.receipt);
+        $("callback").textContent = pretty(item.callback);
+        const states = [
+          ["Đóng gói JSON", true],
+          [
+            "Webhook nhận HTTP " + (item.http_status || "…"),
+            item.http_status >= 200 && item.http_status < 300,
+          ],
+          ["Hệ thống gọi API callback", !!item.callback],
+          ["Giả lập nhận phản hồi", !!item.callback],
+        ];
+        $("steps").replaceChildren();
+        states.forEach(([title, ok], i) => {
+          const row = node("div", "step", "");
+          row.append(
+            node("span", "dot " + (ok ? "ok" : ""), ok ? "✓" : String(i + 1)),
+          );
+          row.append(node("span", "", title));
+          $("steps").append(row);
+        });
+        $("status").textContent = item.callback
+          ? "Đã nhận callback từ hệ thống."
+          : item.error || "Đang chờ phản hồi.";
+      }
+      async function refresh() {
+        const group = $("group").value;
+        if (!group) return;
+        const sequence = ++refreshSequence;
+        const r = await fetch(
+          "/api/mock/messages?group_id=" + encodeURIComponent(group),
+        );
+        if (!r.ok) throw Error("Không đọc được lịch sử giả lập.");
+        const items = (await r.json()).data;
+        if (sequence === refreshSequence && group === $("group").value)
+          render(items);
+      }
+      async function send(url, body) {
+        if (busy) return;
+        busy = true;
+        $("send").disabled = true;
+        $("status").textContent = "Đang gửi webhook và chờ callback…";
+        try {
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          const result = await r.json();
+          if (!r.ok) throw Error(result.error?.message || "Gửi tin thất bại.");
+          if (body) $("text").value = "";
+          await refresh();
+        } catch (e) {
+          $("status").textContent = e.message;
+        } finally {
+          busy = false;
+          $("send").disabled = !$("sender").value;
+        }
+      }
+      $("composer").onsubmit = (e) => {
+        e.preventDefault();
+        const text = $("text").value.trim();
+        if (text)
+          send("/api/mock/messages", {
+            text,
+            group_id: $("group").value,
+            sender_id: $("sender").value,
+          });
+      };
+      $("text").onkeydown = (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          $("composer").requestSubmit();
+        }
+      };
+      let catalogLoading = false;
+      let catalogInitialized = false;
+      async function refreshCatalog() {
+        if (catalogLoading || busy) return;
+        catalogLoading = true;
+        try {
+          const response = await fetch("/api/mock/catalog");
+          const result = await response.json();
+          if (!response.ok) throw Error(result.error?.message || "Không đọc được metadata lớp.");
+          if (catalogInitialized && JSON.stringify(catalog) === JSON.stringify(result.data)) return;
+          catalogInitialized = true;
+          const previousGroup = $("group").value;
+          const previousSender = $("sender").value;
+          catalog = result.data;
+          $("group").replaceChildren(...catalog.map((g) => new Option(g.class_name + " · " + g.student_count + " học viên", g.external_group_id)));
+          if (catalog.some((g) => g.external_group_id === previousGroup)) $("group").value = previousGroup;
+          if ($("group").value !== previousGroup) $("group").onchange();
+          else {
+            const group = catalog.find((g) => g.external_group_id === previousGroup);
+            $("sender").replaceChildren(...(group?.students || []).map((s) => new Option(s.label, s.sender_id)));
+            if (group?.students.some((s) => s.sender_id === previousSender)) $("sender").value = previousSender;
+            $("send").disabled = busy || !$("sender").value;
+          }
+        } finally { catalogLoading = false; }
+      }
+      async function initialize() {
+        $("send").disabled = true;
+        $("group").replaceChildren(new Option("Đang đọc metadata lớp…", ""));
+        $("sender").replaceChildren();
+        const health = await (await fetch("/health")).json();
+        const business = health.data.business_mode;
+        businessMode = business;
+        $("mode-note").textContent = business
+          ? "Chế độ nghiệp vụ: /hoi chỉ truy xuất học liệu được cấp cho lớp đang chọn. Thiếu căn cứ sẽ chuyển giảng viên."
+          : "Chế độ kiểm tra kết nối, không chạy AI.";
+        await refreshCatalog();
+        $("text").placeholder = business
+          ? "Ví dụ: /hoi Các bước của thuật toán K-means là gì?"
+          : "Ví dụ: Xin chào, kiểm tra kết nối webhook";
+        $("group").onchange();
+      }
+      initialize().catch((e) => {
+        $("status").textContent = e.message;
+        clearGroupView();
+        $("status").textContent = e.message;
+      });
+      setInterval(() => {
+        if (!busy) refresh().catch(() => {});
+      }, 1500);
+      setInterval(() => {
+        if (document.visibilityState === "visible") refreshCatalog().catch((e) => { $("status").textContent = e.message; });
+      }, 5000);
+    </script>
+  </body>
+</html>
