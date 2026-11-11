@@ -1,0 +1,13 @@
+{
+  "event_id": "WEBHOOK_DEMO_001",
+  "platform": "mock_zalo",
+  "group_id": "ZGROUP_GS01",
+  "sender_id": "HV_GS_01",
+  "sent_at": "2026-11-10T19:00:00+07:00",
+  "is_bot_message": false,
+  "message": {
+    "type": "text",
+    "text": "/hoi IMPORTRANGE có đồng bộ ghi chú và bình luận không?",
+    "reply_to_event_id": null
+  }
+}
