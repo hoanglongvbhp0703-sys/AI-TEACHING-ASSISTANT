@@ -1,0 +1,6 @@
+[
+  {
+    "question": "K-means gồm những bước nào?",
+    "answer": "Chọn k tâm cụm ban đầu; gán mỗi điểm vào tâm gần nhất; tính lại tâm của mỗi cụm; lặp hai bước gán và cập nhật tâm đến khi hội tụ."
+  }
+]
