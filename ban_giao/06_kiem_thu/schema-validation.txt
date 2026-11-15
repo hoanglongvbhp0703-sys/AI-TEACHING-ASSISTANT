@@ -13,12 +13,12 @@ test_only_one_live_ingestion_job_per_version (__main__.SchemaTests.test_only_one
 test_provider_calls_keep_unknown_cost_and_have_one_owner (__main__.SchemaTests.test_provider_calls_keep_unknown_cost_and_have_one_owner) ... ok
 test_quota_concurrent_connections_cannot_both_take_30th_slot (__main__.SchemaTests.test_quota_concurrent_connections_cannot_both_take_30th_slot) ... ok
 test_quota_release_only_once_and_event_reserves_only_once (__main__.SchemaTests.test_quota_release_only_once_and_event_reserves_only_once) ... ok
-test_schema_has_30_tables_and_fk_enabled (__main__.SchemaTests.test_schema_has_30_tables_and_fk_enabled) ... ok
+test_schema_has_29_tables_and_fk_enabled (__main__.SchemaTests.test_schema_has_29_tables_and_fk_enabled) ... ok
 test_scope_must_resolve_real_resource_and_canonical_id (__main__.SchemaTests.test_scope_must_resolve_real_resource_and_canonical_id) ... ok
 test_ticket_run_and_outbox_are_idempotent (__main__.SchemaTests.test_ticket_run_and_outbox_are_idempotent) ... ok
 test_version_switch_and_revoke_are_atomic (__main__.SchemaTests.test_version_switch_and_revoke_are_atomic) ... ok
 
 ----------------------------------------------------------------------
-Ran 18 tests in 0.127s
+Ran 18 tests in 0.062s
 
 OK
