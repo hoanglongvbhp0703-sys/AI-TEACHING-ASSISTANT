@@ -1,14 +1,10 @@
--- GOS Academy MVP: thiết kế DDL v1, không phải database production hiện hữu.
--- Chạy trên database mới. Không chạy lại thay cho Alembic migration.
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA busy_timeout = 5000;
-BEGIN IMMEDIATE;
-
+-- Current class-scoped schema v5; historical migrations remain in app/db/migrations.
+PRAGMA foreign_keys=ON;
+BEGIN;
 CREATE TABLE users (
     id TEXT PRIMARY KEY NOT NULL,
     display_name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('student','teacher','admin','service')),
+    role TEXT NOT NULL CHECK (role IN ('teacher','admin','service')),
     is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -28,14 +24,6 @@ CREATE TABLE classes (
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-);
-CREATE TABLE enrollments (
-    user_id TEXT NOT NULL REFERENCES users(id),
-    class_id TEXT NOT NULL REFERENCES classes(id),
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','left')),
-    joined_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (user_id,class_id)
 );
 CREATE TABLE teacher_assignments (
     teacher_id TEXT NOT NULL REFERENCES users(id),
@@ -65,8 +53,6 @@ CREATE TABLE external_identities (
     created_at TEXT NOT NULL,
     UNIQUE (platform,external_sender_id)
 );
-
--- scope_id được sinh canonical bởi Backend, không lấy quyền từ client.
 CREATE TABLE access_scopes (
     id TEXT PRIMARY KEY NOT NULL,
     scope_type TEXT NOT NULL CHECK (scope_type IN ('course','class')),
@@ -131,8 +117,6 @@ CREATE TABLE document_versions (
     UNIQUE (document_id,version),
     UNIQUE (document_id,id)
 );
--- Không đặt UNIQUE sha256: có thể khôi phục nội dung V1 bằng version V3.
-CREATE UNIQUE INDEX ux_one_active_version ON document_versions(document_id) WHERE status='active';
 CREATE TABLE document_chunks (
     point_id TEXT PRIMARY KEY NOT NULL,
     document_id TEXT NOT NULL,
@@ -171,8 +155,6 @@ CREATE TABLE ingestion_jobs (
     started_at TEXT,
     finished_at TEXT
 );
-CREATE UNIQUE INDEX ux_ingestion_live ON ingestion_jobs(document_version_id)
-    WHERE status IN ('queued','processing');
 CREATE TABLE cleanup_jobs (
     id TEXT PRIMARY KEY NOT NULL,
     document_version_id TEXT NOT NULL REFERENCES document_versions(id),
@@ -188,7 +170,6 @@ CREATE TABLE cleanup_jobs (
     finished_at TEXT,
     UNIQUE (document_version_id,cleanup_kind)
 );
-
 CREATE TABLE webhook_events (
     event_key TEXT PRIMARY KEY NOT NULL,
     request_id TEXT NOT NULL,
@@ -218,28 +199,28 @@ CREATE TABLE webhook_events (
     error_code TEXT,
     CHECK ((group_binding_id IS NULL AND class_id IS NULL)
         OR (group_binding_id IS NOT NULL AND class_id IS NOT NULL)),
-    CHECK (accepted_at IS NULL OR (user_id IS NOT NULL AND class_id IS NOT NULL)),
+    CHECK (accepted_at IS NULL OR (class_id IS NOT NULL)),
     FOREIGN KEY (group_binding_id,class_id) REFERENCES group_bindings(id,class_id),
     UNIQUE (platform,external_event_id),
     UNIQUE (event_key,class_id,group_binding_id)
 );
 CREATE TABLE daily_usage (
-    user_id TEXT NOT NULL REFERENCES users(id),
+    usage_key TEXT NOT NULL,
     local_date TEXT NOT NULL CHECK (length(local_date)=10),
     accepted_count INTEGER NOT NULL DEFAULT 0 CHECK (accepted_count BETWEEN 0 AND 30),
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (user_id,local_date)
+    PRIMARY KEY (usage_key,local_date)
 );
 CREATE TABLE quota_reservations (
     event_key TEXT PRIMARY KEY NOT NULL REFERENCES webhook_events(event_key),
-    user_id TEXT NOT NULL,
+    usage_key TEXT NOT NULL,
     local_date TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('reserved','charged','released')),
     reserved_at TEXT NOT NULL,
     charged_at TEXT,
     released_at TEXT,
     release_reason TEXT,
-    FOREIGN KEY (user_id,local_date) REFERENCES daily_usage(user_id,local_date)
+    FOREIGN KEY (usage_key,local_date) REFERENCES daily_usage(usage_key,local_date)
 );
 CREATE TABLE conversation_sessions (
     id TEXT PRIMARY KEY NOT NULL,
@@ -252,7 +233,6 @@ CREATE TABLE conversation_sessions (
     FOREIGN KEY (group_binding_id,class_id) REFERENCES group_bindings(id,class_id),
     UNIQUE (id,class_id,group_binding_id)
 );
-CREATE UNIQUE INDEX ux_open_session ON conversation_sessions(class_id,group_binding_id) WHERE status='open';
 CREATE TABLE messages (
     id TEXT PRIMARY KEY NOT NULL,
     session_id TEXT NOT NULL,
@@ -275,7 +255,7 @@ CREATE TABLE support_tickets (
     event_key TEXT NOT NULL UNIQUE,
     class_id TEXT NOT NULL,
     group_binding_id TEXT NOT NULL,
-    student_id TEXT NOT NULL REFERENCES users(id),
+    requester_user_id TEXT REFERENCES users(id),
     question_redacted TEXT NOT NULL,
     reason_code TEXT NOT NULL,
     evidence_summary_redacted TEXT,
@@ -288,7 +268,6 @@ CREATE TABLE support_tickets (
     closed_at TEXT,
     FOREIGN KEY (event_key,class_id,group_binding_id) REFERENCES webhook_events(event_key,class_id,group_binding_id)
 );
--- MVP có một câu trả lời chính thức/ticket; mở rộng thread bằng migration sau.
 CREATE TABLE ticket_replies (
     id TEXT PRIMARY KEY NOT NULL,
     ticket_id TEXT NOT NULL UNIQUE REFERENCES support_tickets(id),
@@ -349,29 +328,7 @@ CREATE TABLE rag_runs (
     started_at TEXT NOT NULL,
     finished_at TEXT,
     error_code TEXT
-);
--- Mỗi dòng = một provider call, kể cả embed/rerank, retry, lỗi có bill.
-CREATE TABLE rag_run_attempts (
-    id TEXT PRIMARY KEY NOT NULL,
-    rag_run_id TEXT REFERENCES rag_runs(id),
-    ingestion_job_id TEXT REFERENCES ingestion_jobs(id),
-    stage TEXT NOT NULL CHECK (stage IN ('query_embed','rerank','generate','ingestion_embed')),
-    attempt_no INTEGER NOT NULL CHECK (attempt_no > 0),
-    call_key TEXT NOT NULL UNIQUE,
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('started','succeeded','failed','unknown')),
-    input_tokens INTEGER CHECK (input_tokens >= 0),
-    output_tokens INTEGER CHECK (output_tokens >= 0),
-    estimated_cost_usd_micros INTEGER CHECK (estimated_cost_usd_micros >= 0),
-    pricing_snapshot_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(pricing_snapshot_json)),
-    provider_request_id TEXT,
-    started_at TEXT NOT NULL,
-    finished_at TEXT,
-    error_code TEXT,
-    CHECK ((rag_run_id IS NOT NULL AND ingestion_job_id IS NULL)
-        OR (rag_run_id IS NULL AND ingestion_job_id IS NOT NULL))
-);
+, query_rewrite_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(query_rewrite_json)));
 CREATE TABLE rag_citations (
     id TEXT PRIMARY KEY NOT NULL,
     rag_run_id TEXT NOT NULL REFERENCES rag_runs(id),
@@ -404,54 +361,7 @@ CREATE TABLE audit_logs (
     change_redacted_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(change_redacted_json)),
     created_at TEXT NOT NULL
 );
-
-CREATE INDEX ix_classes_course ON classes(course_id);
-CREATE INDEX ix_enrollment_class_status ON enrollments(class_id,status);
-CREATE INDEX ix_teacher_class ON teacher_assignments(class_id,is_active);
-CREATE INDEX ix_identity_user ON external_identities(user_id);
-CREATE INDEX ix_groups_class ON group_bindings(class_id,is_active);
-CREATE INDEX ix_access_scope ON document_access(scope_id,document_id);
-CREATE INDEX ix_documents_topic ON documents(topic,status,updated_at);
-CREATE INDEX ix_chunks_version ON document_chunks(document_version_id,scope_id);
-CREATE INDEX ix_ingestion_due ON ingestion_jobs(status,next_attempt_at);
-CREATE INDEX ix_cleanup_due ON cleanup_jobs(status,next_attempt_at);
-CREATE INDEX ix_events_due ON webhook_events(status,next_attempt_at);
-CREATE INDEX ix_events_user_time ON webhook_events(user_id,accepted_at);
-CREATE INDEX ix_events_class_time ON webhook_events(class_id,received_at);
-CREATE INDEX ix_quota_user_date ON quota_reservations(user_id,local_date,status);
-CREATE INDEX ix_messages_session ON messages(session_id,created_at,id);
-CREATE INDEX ix_tickets_class_status ON support_tickets(class_id,status,created_at);
-CREATE INDEX ix_outbound_group ON outbound_messages(group_binding_id,created_at,id);
-CREATE INDEX ix_outbound_due ON outbound_messages(status,next_attempt_at);
-CREATE INDEX ix_run_calls ON rag_run_attempts(rag_run_id,stage,attempt_no);
-CREATE INDEX ix_ingestion_calls ON rag_run_attempts(ingestion_job_id);
-CREATE INDEX ix_security_time ON security_events(created_at,reason_code);
-CREATE INDEX ix_audit_entity ON audit_logs(entity_type,entity_id,created_at);
-
--- Active pointer chỉ được trỏ vào version đã verify; quan hệ cùng document do FK đảm bảo.
-CREATE TRIGGER document_activate_verified
-BEFORE UPDATE OF active_version_id ON documents
-WHEN NEW.active_version_id IS NOT NULL
-BEGIN
-    SELECT RAISE(ABORT,'version_not_ready') WHERE NOT EXISTS (
-        SELECT 1 FROM document_versions v WHERE v.id=NEW.active_version_id
-        AND v.document_id=NEW.id AND v.status IN ('ready','active')
-    );
-END;
--- Lịch sử nhóm đã nhận event không được đổi sang lớp khác; tạo group binding mới
--- chỉ khi nền tảng có external_group_id mới. Rebind cần migration nghiệp vụ riêng.
-CREATE TRIGGER prevent_group_rebind
-BEFORE UPDATE OF class_id ON group_bindings
-WHEN NEW.class_id != OLD.class_id
-BEGIN
-    SELECT RAISE(ABORT,'group_rebind_requires_history_policy');
-END;
-COMMIT;
-
--- Authentication migration v2
--- Add password credentials and durable login sessions without changing business data.
-BEGIN IMMEDIATE;
-CREATE TABLE IF NOT EXISTS user_credentials (
+CREATE TABLE user_credentials (
     user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id),
     username TEXT NOT NULL UNIQUE CHECK (length(username) BETWEEN 3 AND 64 AND username=lower(username)),
     password_hash TEXT NOT NULL CHECK (password_hash LIKE '$argon2id$%'),
@@ -462,42 +372,15 @@ CREATE TABLE IF NOT EXISTS user_credentials (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS auth_sessions (
+CREATE TABLE auth_sessions (
     id TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL REFERENCES users(id),
     token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash)=64),
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
     revoked_at TEXT
-);
-CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_expires ON auth_sessions(user_id,expires_at);
-PRAGMA user_version=2;
-COMMIT;
-
--- Stable student numbers are scoped to a class; login sessions may be class-scoped.
-BEGIN IMMEDIATE;
-ALTER TABLE enrollments ADD COLUMN student_number INTEGER CHECK (student_number > 0);
-WITH numbered AS (
- SELECT user_id,class_id,ROW_NUMBER() OVER(PARTITION BY class_id ORDER BY joined_at,user_id) AS n FROM enrollments
-)
-UPDATE enrollments SET student_number=(SELECT n FROM numbered n WHERE n.user_id=enrollments.user_id AND n.class_id=enrollments.class_id);
-CREATE UNIQUE INDEX ux_enrollment_class_number ON enrollments(class_id,student_number);
-CREATE TRIGGER tr_assign_student_number AFTER INSERT ON enrollments
-WHEN NEW.student_number IS NULL
-BEGIN
- UPDATE enrollments SET student_number=(SELECT COALESCE(MAX(student_number),0)+1 FROM enrollments WHERE class_id=NEW.class_id)
- WHERE user_id=NEW.user_id AND class_id=NEW.class_id;
-END;
-CREATE TRIGGER tr_student_number_immutable BEFORE UPDATE OF student_number ON enrollments
-WHEN OLD.student_number IS NOT NULL AND NEW.student_number IS NOT OLD.student_number
-BEGIN SELECT RAISE(ABORT,'student_number is immutable'); END;
-ALTER TABLE auth_sessions ADD COLUMN class_id TEXT REFERENCES classes(id);
-PRAGMA user_version=3;
-COMMIT;
-
--- Extend the provider-call audit, preserving all historical IDs/usage/order.
-BEGIN IMMEDIATE;
-CREATE TABLE rag_run_attempts_v4 (
+, class_id TEXT REFERENCES classes(id));
+CREATE TABLE "rag_run_attempts" (
     id TEXT PRIMARY KEY NOT NULL,
     rag_run_id TEXT REFERENCES rag_runs(id),
     ingestion_job_id TEXT REFERENCES ingestion_jobs(id),
@@ -518,11 +401,46 @@ CREATE TABLE rag_run_attempts_v4 (
     CHECK ((rag_run_id IS NOT NULL AND ingestion_job_id IS NULL)
         OR (rag_run_id IS NULL AND ingestion_job_id IS NOT NULL))
 );
-INSERT INTO rag_run_attempts_v4 SELECT * FROM rag_run_attempts ORDER BY rowid;
-DROP TABLE rag_run_attempts;
-ALTER TABLE rag_run_attempts_v4 RENAME TO rag_run_attempts;
+CREATE UNIQUE INDEX ux_one_active_version ON document_versions(document_id) WHERE status='active';
+CREATE UNIQUE INDEX ux_ingestion_live ON ingestion_jobs(document_version_id)
+    WHERE status IN ('queued','processing');
+CREATE UNIQUE INDEX ux_open_session ON conversation_sessions(class_id,group_binding_id) WHERE status='open';
+CREATE INDEX ix_classes_course ON classes(course_id);
+CREATE INDEX ix_teacher_class ON teacher_assignments(class_id,is_active);
+CREATE INDEX ix_identity_user ON external_identities(user_id);
+CREATE INDEX ix_groups_class ON group_bindings(class_id,is_active);
+CREATE INDEX ix_access_scope ON document_access(scope_id,document_id);
+CREATE INDEX ix_documents_topic ON documents(topic,status,updated_at);
+CREATE INDEX ix_chunks_version ON document_chunks(document_version_id,scope_id);
+CREATE INDEX ix_ingestion_due ON ingestion_jobs(status,next_attempt_at);
+CREATE INDEX ix_cleanup_due ON cleanup_jobs(status,next_attempt_at);
+CREATE INDEX ix_events_due ON webhook_events(status,next_attempt_at);
+CREATE INDEX ix_events_user_time ON webhook_events(user_id,accepted_at);
+CREATE INDEX ix_events_class_time ON webhook_events(class_id,received_at);
+CREATE INDEX ix_quota_user_date ON quota_reservations(usage_key,local_date,status);
+CREATE INDEX ix_messages_session ON messages(session_id,created_at,id);
+CREATE INDEX ix_tickets_class_status ON support_tickets(class_id,status,created_at);
+CREATE INDEX ix_outbound_group ON outbound_messages(group_binding_id,created_at,id);
+CREATE INDEX ix_outbound_due ON outbound_messages(status,next_attempt_at);
+CREATE INDEX ix_security_time ON security_events(created_at,reason_code);
+CREATE INDEX ix_audit_entity ON audit_logs(entity_type,entity_id,created_at);
+CREATE INDEX ix_auth_sessions_user_expires ON auth_sessions(user_id,expires_at);
 CREATE INDEX ix_run_calls ON rag_run_attempts(rag_run_id,stage,attempt_no);
 CREATE INDEX ix_ingestion_calls ON rag_run_attempts(ingestion_job_id);
-ALTER TABLE rag_runs ADD COLUMN query_rewrite_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(query_rewrite_json));
-PRAGMA user_version=4;
+CREATE TRIGGER document_activate_verified
+BEFORE UPDATE OF active_version_id ON documents
+WHEN NEW.active_version_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT,'version_not_ready') WHERE NOT EXISTS (
+        SELECT 1 FROM document_versions v WHERE v.id=NEW.active_version_id
+        AND v.document_id=NEW.id AND v.status IN ('ready','active')
+    );
+END;
+CREATE TRIGGER prevent_group_rebind
+BEFORE UPDATE OF class_id ON group_bindings
+WHEN NEW.class_id != OLD.class_id
+BEGIN
+    SELECT RAISE(ABORT,'group_rebind_requires_history_policy');
+END;
+PRAGMA user_version=5;
 COMMIT;

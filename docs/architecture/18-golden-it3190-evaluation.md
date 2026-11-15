@@ -8,7 +8,7 @@ Ngày chạy: 11/11/2026. Dataset đầu vào: `GOS_IT3190_Golden_Dataset_40.jso
 
 | Trường | Giá trị |
 |---|---|
-| Platform | `mock_zalo` |
+| Kênh đánh giá | EventService nội bộ, không đánh giá truyền tin Zalo |
 | Group | `ZGROUP_ML01` |
 | Class | `ML-DEMO-01` |
 | Course | `ML-DEMO` |
@@ -17,7 +17,7 @@ Ngày chạy: 11/11/2026. Dataset đầu vào: `GOS_IT3190_Golden_Dataset_40.jso
 
 Đối chiếu lại 40 event trong SQLite: tất cả đúng group/class trên. Toàn bộ nguồn gửi Claude nằm trong scope được phép và active versions của lớp ML. Không lấy tài liệu của lớp Google Sheets hoặc AUTO.
 
-Chạy trên snapshot riêng `data/golden-it3190-evaluation`, với tài khoản kiểm thử mới thuộc lớp ML cho mỗi ca. Không thay đổi DB chính, không dùng quota tài khoản thật. Thực thi qua `EventService.receive/process_one`, quota/ACL, Memory Service, backend RAG và tạo outbox/ticket; không phát callback tới giả lập và không đánh giá HTTP transport. History của câu 015/022 là fixture từ golden, được đưa vào Memory Service. Các ca khác có session độc lập.
+Chạy trên snapshot riêng `data/golden-it3190-evaluation`, với tài khoản kiểm thử mới thuộc lớp ML cho mỗi ca. Không thay đổi DB chính, không dùng quota tài khoản thật. Thực thi qua `EventService.receive/process_one`, quota/ACL, Memory Service, backend RAG và tạo outbox/ticket; không phát tin nhắn và không đánh giá HTTP transport. History của câu 015/022 là fixture từ golden, được đưa vào Memory Service. Các ca khác có session độc lập.
 
 Pipeline thật: BKAI Vietnamese Bi-Encoder → Qdrant Top 10 → mMARCO MiniLMv2 Top 5 → `claude-sonnet-4.6` đánh giá bằng chứng/sinh câu trả lời → Backend xác minh citation. Trong lượt RAG có 40 request generate và 2 request rewrite.
 
