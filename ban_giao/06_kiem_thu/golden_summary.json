@@ -64,11 +64,11 @@
     ]
   },
   "metadata": {
-    "platform": "mock_zalo",
     "group_id": "ZGROUP_ML01",
     "class_id": "ML-DEMO-01",
     "course_id": "ML-DEMO",
-    "history_policy": "Independent sessions; only dataset-provided history seeded through Memory Service"
+    "history_policy": "Independent sessions; only dataset-provided history seeded through Memory Service",
+    "evaluation_transport": "internal EventService; transport not evaluated"
   },
   "metadata_verification": {
     "events_checked": 40,

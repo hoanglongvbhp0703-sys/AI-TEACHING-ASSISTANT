@@ -1,13 +1,12 @@
 # Báo cáo kiểm thử và lỗi tồn đọng
 
-Đợt đóng gói 12/11/2026. Kiểm thử tự động được chạy lại trên database tạm; kết quả thực tế nằm ở `pytest-results.xml`, `schema-validation.txt` và danh sách node IDs `test-cases.txt`. Không chạy lại các request Claude trong golden khi đóng gói; kết quả model thật dưới đây là lượt đã lưu ngày 11/11/2026.
+Kiểm thử tự động được cập nhật theo code hiện hành. Kiểm thử tự động được chạy lại trên database tạm; kết quả thực tế nằm ở `pytest-results.xml`, `schema-validation.txt` và danh sách node IDs `test-cases.txt`. Không chạy lại các request Claude trong golden khi đóng gói; kết quả model thật dưới đây là lượt đã lưu ngày 11/11/2026.
 
 ## 1. Phạm vi và bằng chứng
 
-- Unit/integration: auth, role/ACL, lớp/roster, search tài khoản, webhook/dedup/quota, memory/rewriter, version/reindex/revoke, ingestion, outbox/retry, ticket/FAQ, progress/logging, parser và công thức metric.
+- Unit/integration: auth, role/ACL, lớp/chat binding, search tài khoản, Zalo Bot/dedup/quota, memory/rewriter, version/reindex/revoke, ingestion, outbox/retry, ticket/FAQ, progress/logging, parser và công thức metric.
 - Các test dùng model/gateway double được ghi rõ trong fixtures; không coi chúng là benchmark BKAI/Claude thật.
 - `golden_summary.json`, `golden_results.csv`: model thật BKAI/Qdrant/mMARCO/Claude Sonnet 4.6, 40 câu golden, nhóm `ZGROUP_ML01`, lớp `ML-DEMO-01`, 14 PDF và 594 chunks. Metadata 40/40 event và nguồn đúng scope/active đã được kiểm tra.
-- `bootstrap-check.json`: kiểm tra mới nạp corpus bằng script bàn giao trên thư mục riêng; không dùng DB vận hành. Screenshot hướng dẫn là UI QA, không làm bằng chứng cho điểm RAG.
 
 ## 2. Kết quả golden
 
