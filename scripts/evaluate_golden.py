@@ -30,7 +30,7 @@ from app.db.session import Database
 from app.rag.local_backend import LocalRAG
 from app.rag.provider import ClaudeGateway
 from app.repositories.store import uid
-from app.schemas.event import MockEvent
+from app.schemas.event import IncomingEvent
 from app.services import memory_service
 from app.services.access_service import allowed_sources
 from app.services.event_service import EventService
@@ -145,43 +145,11 @@ def question_text(question):
     return text[4:].strip() if text == "/hoi" or text.startswith("/hoi ") else text
 
 
-def register_student(db, clock, user_id):
-    now = clock.stamp()
-    with db.write() as s:
-        s.insert(
-            "users",
-            id=user_id,
-            display_name="Golden evaluation",
-            role="student",
-            created_at=now,
-            updated_at=now,
-        )
-        number = s.one(
-            "SELECT COALESCE(MAX(student_number),0)+1 AS n FROM enrollments WHERE class_id='ML-DEMO-01'"
-        )["n"]
-        s.insert(
-            "enrollments",
-            user_id=user_id,
-            class_id="ML-DEMO-01",
-            student_number=number,
-            joined_at=now,
-            updated_at=now,
-        )
-        s.insert(
-            "external_identities",
-            id=uid(),
-            user_id=user_id,
-            platform="mock_zalo",
-            external_sender_id=user_id,
-            created_at=now,
-        )
-
-
-def receive(events, clock, student, text):
-    event = MockEvent(
+def receive(events, clock, sender, text):
+    event = IncomingEvent(
         event_id=uid(),
         group_id="ZGROUP_ML01",
-        sender_id=student,
+        sender_id=sender,
         sent_at=clock.now(),
         message={"text": "/hoi " + question_text(text)},
     )
@@ -191,14 +159,14 @@ def receive(events, clock, student, text):
     return receipt["event_key"]
 
 
-def seed_history(db, events, clock, settings, student, history):
+def seed_history(db, events, clock, settings, sender, history):
     # Golden histories are fixtures, not newly generated answers or evidence.
     with db.write() as s:
         s.execute(
             "UPDATE conversation_sessions SET status='closed' WHERE class_id='ML-DEMO-01' AND status='open'"
         )
     for turn in history:
-        key = receive(events, clock, student, turn["question"])
+        key = receive(events, clock, sender, turn["question"])
         with db.write() as s:
             event = s.one("SELECT * FROM webhook_events WHERE event_key=:e", e=key)
             sid = memory_service.session_for(s, event, clock, settings)
@@ -389,7 +357,7 @@ def main():
         rag_vector_dir=args.snapshot.resolve() / "qdrant",
         background_jobs_enabled=False,
         rate_limit_enabled=False,
-        mock_outbound_http_enabled=False,
+        zalo_bot_enabled=False,
         job_lease_seconds=900,
     )
     gateway = CaptureGateway(settings)
@@ -406,7 +374,7 @@ def main():
         "judge": settings.claude_model,
     }
     report["metadata"] = {
-        "platform": "mock_zalo",
+        "platform": "zalo_bot",
         "group_id": "ZGROUP_ML01",
         "class_id": "ML-DEMO-01",
         "course_id": "ML-DEMO",
@@ -442,10 +410,9 @@ def main():
         for g in gold:
             if any(r["gold"]["id"] == g["id"] for r in report["results"]):
                 continue
-            student = "GOLDEN-" + uid()
-            register_student(db, clock, student)
-            seed_history(db, events, clock, settings, student, g["history"])
-            key = receive(events, clock, student, g["question"])
+            sender = "GOLDEN-" + uid()
+            seed_history(db, events, clock, settings, sender, g["history"])
+            key = receive(events, clock, sender, g["question"])
             backend.last_trace = {}
             gateway.sources, gateway.generated = [], None
             started = time.monotonic()

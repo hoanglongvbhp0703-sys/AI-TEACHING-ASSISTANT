@@ -42,7 +42,7 @@ async def main():
             rag_jobs_enabled=True,
             seed_demo_on_start=True,
             background_jobs_enabled=False,
-            mock_outbound_http_enabled=False,
+            zalo_bot_enabled=False,
             job_lease_seconds=900,
             **options,
         )

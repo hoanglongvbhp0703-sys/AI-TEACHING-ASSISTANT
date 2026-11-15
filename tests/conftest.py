@@ -121,23 +121,48 @@ class TestOnlyBackend:
 
 
 @pytest.fixture
-def rig(tmp_path):
+def rig(tmp_path, monkeypatch):
     settings = Settings(
         _env_file=None,
         database_url="sqlite:///" + str(tmp_path / "gos.db"),
         upload_dir=tmp_path / "uploads",
         staging_dir=tmp_path / "staging",
         auth_tokens_json={token: user for user, token in TOKENS.items()},
-        mock_webhook_secret="test-webhook-secret-" + "x" * 32,
-        mock_webhook_auth_mode="secret",  # Explicit backward compatibility for the original API suite.
         seed_demo_on_start=True,
         background_jobs_enabled=False,
         rate_limit_enabled=False,
     )
+    from app.integrations.zalo_bot import BotPoller
+
+    monkeypatch.setattr(BotPoller, "start", lambda self: None)
     backend = TestOnlyBackend()
     clock = TestClock()
     app = create_app(settings, backend=backend, clock=clock)
     with TestClient(app) as client:
+        # Test events use the production service; only the external HTTP delivery is replaced.
+        import httpx
+        from pydantic import SecretStr
+
+        settings.zalo_bot_enabled = True
+        settings.zalo_bot_token = SecretStr("123456:test-only-not-a-real-token")
+        monkeypatch.setattr(
+            httpx,
+            "post",
+            lambda *a, **kw: httpx.Response(
+                200, json={"ok": True, "result": {"message_id": "TEST-DELIVERED"}}
+            ),
+        )
+        with app.state.db.write() as s:
+            for cid, chat in [("GS-KPI-01", "123456:TEST-GS"), ("ML-DEMO-01", "123456:TEST-ML")]:
+                s.insert(
+                    "group_bindings",
+                    id=chat,
+                    class_id=cid,
+                    platform="zalo_bot",
+                    external_group_id=chat,
+                    display_name=cid,
+                    created_at=clock.stamp(),
+                )
         yield app, client, backend, clock
 
 
@@ -145,10 +170,10 @@ def auth(user="admin"):
     return {"Authorization": "Bearer " + TOKENS[user]}
 
 
-def payload(eid="E1", group="ZGROUP_GS01", sender="HV_GS_01", text="/hoi Câu hỏi thử nghiệm"):
+def payload(eid="E1", group="123456:TEST-GS", sender="HV_GS_01", text="/hoi Câu hỏi thử nghiệm"):
     return {
         "event_id": eid,
-        "platform": "mock_zalo",
+        "platform": "zalo_bot",
         "group_id": group,
         "sender_id": sender,
         "sent_at": "2026-11-10T19:00:00+07:00",
@@ -182,3 +207,21 @@ def upload(client, user="teacher-gs", scopes=None, config=None, data=None):
             )
         },
     )
+
+
+def usage(app, sender="HV_GS_01", platform="zalo_bot"):
+    from app.services.quota_service import quota, usage_key
+
+    with app.state.db.read() as s:
+        return quota(s, usage_key({"platform": platform, "raw_sender_id": sender}), app.state.clock)
+
+
+def outbound(app, group="123456:TEST-GS"):
+    with app.state.db.read() as s:
+        rows = s.all(
+            "SELECT o.* FROM outbound_messages o JOIN group_bindings g ON g.id=o.group_binding_id WHERE g.external_group_id=:g AND o.status='sent' ORDER BY o.rowid",
+            g=group,
+        )
+    for row in rows:
+        row["citations"] = json.loads(row["citations_json"])
+    return rows

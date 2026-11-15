@@ -8,13 +8,14 @@ from app.db.seed import seed_demo
 from app.main import create_app
 from app.rag.backend import UnconfiguredRAG
 from app.repositories.store import uid
-from tests.conftest import auth, drain, payload, upload
+from app.schemas.event import IncomingEvent
+from tests.conftest import auth, drain, outbound, payload, upload, usage
 
 
 def post_event(client, **kwargs):
-    response = client.post("/api/v1/mock/events", headers=auth("adapter"), json=payload(**kwargs))
-    assert response.status_code in {200, 202}, response.text
-    return response.json()["data"]
+    return client.app.state.events.receive(
+        IncomingEvent.model_validate(payload(**kwargs)), "test-event"
+    )
 
 
 def test_openapi_health_auth_and_no_secret_echo(rig):
@@ -25,7 +26,9 @@ def test_openapi_health_auth_and_no_secret_echo(rig):
         "GS-KPI-01"
     ]
     spec = c.get("/openapi.json").json()
-    assert sum(len(v) for v in spec["paths"].values()) == 51
+    assert not any("students" in path or "members" in path for path in spec["paths"])
+    assert "/api/v1/integrations/zalo-bot/bindings" in spec["paths"]
+    assert "/api/v1/integrations/zalo-bot/inbox" in spec["paths"]
     assert c.get("/docs").status_code == 200
     assert c.get("/api/v1/health").headers["x-request-id"]
 
@@ -42,7 +45,7 @@ def test_admin_resources_and_class_permissions(rig):
         c.post(
             "/api/v1/users",
             headers=auth(),
-            json={"id": "new-student", "display_name": "New student", "role": "student"},
+            json={"id": "new-teacher", "display_name": "New student", "role": "teacher"},
         ).status_code
         == 201
     )
@@ -59,12 +62,6 @@ def test_admin_resources_and_class_permissions(rig):
             json={"id": "NEW-01", "name": "New class", "course_id": "NEW"},
         ).status_code
         == 201
-    )
-    assert (
-        c.put(
-            "/api/v1/classes/NEW-01/members/new-student", headers=auth(), json={"status": "active"}
-        ).status_code
-        == 200
     )
     assert (
         c.put(
@@ -88,46 +85,40 @@ def test_admin_resources_and_class_permissions(rig):
         c.post(
             "/api/v1/external-identities",
             headers=auth(),
-            json={"user_id": "new-student", "external_sender_id": "external-new"},
+            json={"user_id": "new-teacher", "external_sender_id": "external-new"},
         ).status_code
         == 201
     )
-    assert c.get("/api/v1/classes/NEW-01/members", headers=auth("teacher-ai")).status_code == 403
-    assert (
-        c.get("/api/v1/classes/NEW-01/members", headers=auth("teacher-gs")).json()["data"][0]["id"]
-        == "new-student"
-    )
+    assert c.get("/api/v1/classes/NEW-01/teachers", headers=auth("teacher-ai")).status_code == 403
     assert (
         c.post(
             "/api/v1/users",
             headers=auth(),
-            json={"id": "new-student", "display_name": "Duplicate", "role": "student"},
+            json={"id": "new-teacher", "display_name": "Duplicate", "role": "teacher"},
         ).status_code
         == 409
     )
 
 
-def test_trigger_empty_bot_ignored_and_strict_payload(rig):
-    app, c, b, _ = rig
-    for n, text in enumerate(["Chào cả lớp", "Hello /hoi test", "/hoiabc test"]):
-        assert post_event(c, eid=str(n), text=text)["status"] == "ignored"
-    assert post_event(c, eid="empty", text="/hoi")["outcome_code"] == "empty_question"
-    bot = payload("bot")
-    bot["is_bot_message"] = True
+def test_empty_bot_ignored_and_strict_payload(rig):
+    import pytest
+    from pydantic import ValidationError
+
+    app, c, backend, clock = rig
+    assert post_event(c, text="")["outcome_code"] == "empty_question"
+    body = payload("bot")
+    body["is_bot_message"] = True
     assert (
-        c.post("/api/v1/mock/events", headers=auth("adapter"), json=bot).json()["data"]["status"]
-        == "ignored"
+        app.state.events.receive(IncomingEvent.model_validate(body), "test")["outcome_code"]
+        == "bot_message"
     )
-    bad = payload("spoof")
-    bad["class_id"] = "ML-DEMO-01"
-    assert c.post("/api/v1/mock/events", headers=auth("adapter"), json=bad).status_code == 422
-    assert c.post("/api/v1/webhooks/mock-zalo", json=payload()).status_code == 401
+    body = payload()
+    body["class_id"] = "ML-DEMO-01"
+    with pytest.raises(ValidationError):
+        IncomingEvent.model_validate(body)
     drain(app)
-    assert not b.contexts
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 0
-    with app.state.db.read() as s:
-        assert not s.all("SELECT * FROM messages")
-        assert not any(e["question_redacted"] for e in s.all("SELECT * FROM webhook_events"))
+    assert not backend.contexts
+    assert usage(app)["used"] == 0
 
 
 def test_event_dedup_and_ticket_outbox_once_under_concurrency(rig):
@@ -137,7 +128,7 @@ def test_event_dedup_and_ticket_outbox_once_under_concurrency(rig):
     assert sorted(r["status"] for r in results) == ["duplicate_ignored", "queued"]
     drain(app)
     assert len(b.contexts) == 1
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 1
+    assert usage(app, "HV_GS_01")["used"] == 1
     with app.state.db.read() as s:
         for table in ["support_tickets", "rag_runs", "quota_reservations", "outbound_messages"]:
             assert s.one(f"SELECT count(*) AS n FROM {table}")["n"] == 1
@@ -158,20 +149,13 @@ def test_quota_across_classes_and_next_vietnam_day(rig):
             c,
             eid=f"e{n}",
             sender="student-shared",
-            group="ZGROUP_GS01" if n < 20 else "ZGROUP_ML01",
+            group="123456:TEST-GS" if n < 20 else "123456:TEST-ML",
         )
         assert result["status"] == "queued"
     assert post_event(c, eid="31", sender="student-shared")["outcome_code"] == "quota_exceeded"
-    assert (
-        c.get("/api/v1/students/student-shared/quota", headers=auth("student-shared")).json()[
-            "data"
-        ]["remaining"]
-        == 0
-    )
+    assert usage(app, "student-shared")["remaining"] == 0
     clock.value += timedelta(days=1)
-    assert (
-        c.get("/api/v1/students/student-shared/quota", headers=auth()).json()["data"]["used"] == 0
-    )
+    assert usage(app, "student-shared")["used"] == 0
     drain(app)
     with app.state.db.read() as s:
         assert {r["local_date"] for r in s.all("SELECT * FROM quota_reservations")} == {
@@ -187,12 +171,12 @@ def test_quota_simultaneous_30th_slot(rig):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda n: post_event(c, eid=f"last{n}"), range(2)))
     assert sorted(r["status"] for r in results) == ["queued", "rejected"]
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 30
+    assert usage(app, "HV_GS_01")["used"] == 30
 
 
 def test_bot_off_nonmember_and_revoked_access_release_reservation(rig):
     app, c, b, _ = rig
-    assert post_event(c, eid="wrong", group="ZGROUP_ML01")["outcome_code"] == "access_denied"
+    assert post_event(c, eid="wrong", group="UNKNOWN-GROUP")["outcome_code"] == "access_denied"
     accepted = post_event(c)
     assert (
         c.patch(
@@ -203,7 +187,7 @@ def test_bot_off_nonmember_and_revoked_access_release_reservation(rig):
     assert post_event(c, eid="off")["status"] == "rejected"
     drain(app)
     assert not b.contexts
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 0
+    assert usage(app, "HV_GS_01")["used"] == 0
     assert (
         c.get("/api/v1/events/" + accepted["event_key"], headers=auth()).json()["data"][
             "outcome_code"
@@ -219,7 +203,7 @@ def test_shared_memory_pair_window_group_isolation_and_ttl(rig):
         drain(app)
         clock.value += timedelta(seconds=1)
     assert len(b.contexts[-1].memory) == 5
-    post_event(c, eid="ai", group="ZGROUP_ML01", sender="HV_ML_01")
+    post_event(c, eid="ai", group="123456:TEST-ML", sender="HV_ML_01")
     drain(app)
     assert b.contexts[-1].memory == []
     clock.value += timedelta(minutes=31)
@@ -320,13 +304,10 @@ def test_answer_citation_validation_and_stale_memory(rig):
     b.reply_mode = "answer"
     post_event(c)
     drain(app)
-    out = c.get("/api/v1/mock/groups/ZGROUP_GS01/messages", headers=auth("HV_GS_01")).json()[
-        "data"
-    ]["items"]
+    out = outbound(app)
     assert out[0]["citations"][0]["document_version_id"] == info["version_id"]
     assert (
-        c.get("/api/v1/mock/groups/ZGROUP_ML01/messages", headers=auth("HV_GS_01")).status_code
-        == 403
+        c.get("/api/v1/classes/ML-DEMO-01/teachers", headers=auth("teacher-gs")).status_code == 403
     )
     c.delete("/api/v1/documents/" + info["document_id"], headers=auth("teacher-gs"))
     clock.value += timedelta(seconds=1)
@@ -377,9 +358,7 @@ def test_revoke_between_generation_and_send_handoffs(rig):
     app.state.events.process_one()
     c.delete("/api/v1/documents/" + info["document_id"], headers=auth("teacher-gs"))
     drain(app)
-    out = c.get("/api/v1/mock/groups/ZGROUP_GS01/messages", headers=auth("HV_GS_01")).json()[
-        "data"
-    ]["items"][0]
+    out = outbound(app)[0]
     assert out["citations"] == [] and out["ticket_id"]
 
 
@@ -477,7 +456,7 @@ def test_security_block_redaction_and_error_no_fabrication(rig):
         )
         assert "very-private-password" not in stored["question_redacted"]
         assert stored["outcome_code"] == "error"
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 2
+    assert usage(app, "HV_GS_01")["used"] == 2
 
 
 def test_restart_recovers_queued_event_and_seed_does_not_reset(rig):
@@ -493,9 +472,7 @@ def test_restart_recovers_queued_event_and_seed_does_not_reset(rig):
             new.get("/api/v1/events/" + event["event_key"], headers=auth()).json()["data"]["status"]
             == "completed"
         )
-        assert (
-            new.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 1
-        )
+        assert usage(app, "HV_GS_01")["used"] == 1
         assert not next(
             r
             for r in new.get("/api/v1/classes", headers=auth()).json()["data"]
@@ -528,23 +505,14 @@ def test_throttle_report_access_and_cursor(rig):
         assert post_event(c, eid=str(i))["status"] == "queued"
     assert post_event(c, eid="throttle")["outcome_code"] == "rate_limited"
     drain(app)
-    first = c.get(
-        "/api/v1/mock/groups/ZGROUP_GS01/messages?limit=2", headers=auth("HV_GS_01")
-    ).json()["data"]
-    next_page = c.get(
-        "/api/v1/mock/groups/ZGROUP_GS01/messages",
-        params={"after": first["next_cursor"], "limit": 100},
-        headers=auth("HV_GS_01"),
-    ).json()["data"]
-    assert not {r["id"] for r in first["items"]}.intersection(r["id"] for r in next_page["items"])
-    assert len(first["items"]) + len(next_page["items"]) == 6
+    rows = outbound(app)
+    assert len(rows) == 6
+    assert len({r["id"] for r in rows}) == 6
     clock.value += timedelta(seconds=1)
     report = c.get("/api/v1/reports/summary", headers=auth("teacher-gs")).json()["data"]
     assert report["accepted_questions"] == 5 and report["tickets"] == 5
     assert (
-        c.get(
-            "/api/v1/reports/summary?class_id=ML-DEMO-01", headers=auth("teacher-gs")
-        ).status_code
+        c.get("/api/v1/reports/summary?class_id=ML-DEMO-01", headers=auth("teacher-gs")).status_code
         == 403
     )
     assert (
@@ -552,35 +520,18 @@ def test_throttle_report_access_and_cursor(rig):
     )
 
 
-def test_size_limits_invalid_metadata_and_raw_inputs_not_echoed(rig):
+def test_removed_transport_routes_and_request_size(rig):
     app, c, _, _ = rig
-    bad = payload()
-    bad["private_secret"] = "do-not-echo"
-    response = c.post("/api/v1/mock/events", headers=auth("adapter"), json=bad)
-    assert response.status_code == 422 and "do-not-echo" not in response.text
-    app.state.settings.max_request_bytes = 100
-    # Middleware closes over the same Settings instance.
-    response = c.post("/api/v1/mock/events", headers=auth("adapter"), content=b"x" * 101)
-    assert response.status_code == 413
-
-
-def test_webhook_secret_disabled_user_and_error_envelopes(rig):
-    app, c, _, _ = rig
-    accepted = c.post(
+    for path in [
+        "/api/v1/mock/events",
         "/api/v1/webhooks/mock-zalo",
-        headers={"X-Webhook-Secret": app.state.settings.mock_webhook_secret},
-        json=payload(),
-    )
-    assert accepted.status_code == 202
-    assert (
-        c.patch("/api/v1/users/HV_GS_01", headers=auth(), json={"is_active": False}).status_code
-        == 200
-    )
-    assert c.get("/api/v1/auth/me", headers=auth("HV_GS_01")).status_code == 401
-    drain(app)
-    assert c.get("/api/v1/students/HV_GS_01/quota", headers=auth()).json()["data"]["used"] == 0
-    for response in [c.get("/missing"), c.delete("/api/v1/health")]:
-        assert set(response.json()) == {"data", "error", "request_id"}
+        "/api/v1/mock/catalog",
+        "/api/v1/mock/groups",
+    ]:
+        assert c.get(path).status_code == 404
+        assert c.post(path, json={}).status_code == 404
+    app.state.settings.max_request_bytes = 100
+    assert c.post("/missing", content=b"x" * 101).status_code == 413
 
 
 def test_revoke_during_index_queues_cleanup_and_cannot_reactivate(rig):

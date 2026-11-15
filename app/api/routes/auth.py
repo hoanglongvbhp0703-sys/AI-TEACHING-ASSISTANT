@@ -65,7 +65,7 @@ def credentials(user_id: str, body: Credentials, request: Request, user=Depends(
 @router.get("/auth/options", response_model=Envelope[Any])
 def login_options(
     request: Request,
-    role: Literal["admin", "teacher", "student"],
+    role: Literal["admin", "teacher"],
     class_id: str | None = Query(None, max_length=100),
 ):
     return ok(request, request.app.state.auth.options(role, class_id))

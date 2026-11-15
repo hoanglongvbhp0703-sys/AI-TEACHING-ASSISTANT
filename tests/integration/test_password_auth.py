@@ -145,7 +145,7 @@ def test_migration_v1_preserves_existing_profiles(tmp_path):
         db.migrate()
         with db.engine.connect() as c:
             assert [tuple(row) for row in c.exec_driver_sql("SELECT * FROM users")] == before
-            assert c.exec_driver_sql("PRAGMA user_version").scalar() == 4
+            assert c.exec_driver_sql("PRAGMA user_version").scalar() == 5
             assert not c.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
             assert c.exec_driver_sql("SELECT count(*) FROM user_credentials").scalar() == 0
     finally:

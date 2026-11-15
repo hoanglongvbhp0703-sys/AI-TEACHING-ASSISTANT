@@ -11,14 +11,13 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.deps import ok
-from app.api.routes import auth, documents, events, identity, portal, reports, tickets, webhooks
+from app.api.routes import auth, documents, events, identity, reports, tickets
 from app.core.clock import Clock
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.runtime_logging import attach_runtime_log, detach_runtime_log
 from app.db.seed import seed_demo
 from app.db.session import Database
-from app.integrations.connection_bridge import ConnectionBridge
 from app.jobs.runner import Worker
 from app.rag.backend import UnconfiguredRAG
 from app.repositories.store import uid
@@ -54,16 +53,23 @@ def create_app(settings=None, *, backend=None, clock=None):
         app.state.events = EventService(db, clock, settings, backend)
         app.state.documents = DocumentService(db, clock, settings)
         app.state.tickets = TicketService(db, clock, settings)
-        app.state.connection_bridge = ConnectionBridge(settings, clock)
         app.state.worker = Worker(db, clock, settings, backend, app.state.events)
-        jobs_enabled = settings.background_jobs_enabled and settings.mock_webhook_mode == "business"
+        from app.integrations.zalo_bot import BotPoller
+
+        app.state.zalo_bot = (
+            BotPoller(settings, app.state.events) if settings.zalo_bot_enabled else None
+        )
+        jobs_enabled = settings.background_jobs_enabled
         try:
             if jobs_enabled:
                 app.state.worker.start()
+            if app.state.zalo_bot:
+                app.state.zalo_bot.start()
             yield
         finally:
+            if app.state.zalo_bot:
+                app.state.zalo_bot.stop()
             app.state.worker.stop()
-            app.state.connection_bridge.close()
             backend.close()
             db.engine.dispose()
             detach_runtime_log(log_handler)
@@ -109,8 +115,6 @@ def create_app(settings=None, *, backend=None, clock=None):
     async def request_context(request, call_next):
         request.state.request_id = uid()
         limit = settings.max_request_bytes
-        if request.url.path.rstrip("/") == "/api/v1/webhooks/mock-zalo":
-            limit = min(limit, settings.webhook_max_body_bytes)
         parts = []
         size = 0
         async for part in request.stream():
@@ -168,8 +172,6 @@ def create_app(settings=None, *, backend=None, clock=None):
     for router in [
         identity.router,
         auth.router,
-        portal.router,
-        webhooks.router,
         events.router,
         documents.router,
         tickets.router,
@@ -186,17 +188,20 @@ def create_app(settings=None, *, backend=None, clock=None):
             {
                 "application": "ok",
                 "sqlite": "ok",
-                "schema_version": 4,
+                "schema_version": 5,
                 "rag": "ready" if backend.ready else "unconfigured",
-                "background_jobs": settings.background_jobs_enabled
-                and settings.mock_webhook_mode == "business",
-                "webhook_mode": settings.mock_webhook_mode,
+                "background_jobs": settings.background_jobs_enabled,
                 "rag_jobs_enabled": settings.rag_jobs_enabled,
                 "worker_running": bool(
                     app.state.worker.thread and app.state.worker.thread.is_alive()
                 ),
                 "max_upload_bytes": settings.max_upload_bytes,
-                "integration": "mock_zalo_only",
+                "integration": "zalo_bot" if settings.zalo_bot_enabled else "disabled",
+                "zalo_bot_running": bool(
+                    app.state.zalo_bot
+                    and app.state.zalo_bot.thread
+                    and app.state.zalo_bot.thread.is_alive()
+                ),
             },
         )
 
@@ -206,24 +211,11 @@ def create_app(settings=None, *, backend=None, clock=None):
 app = create_app()
 
 
-def create_connection_app():
-    """Explicit transport-only entrypoint for the two-way local simulator."""
-    return create_app(
-        Settings(
-            mock_webhook_mode="connection",
-            background_jobs_enabled=False,
-            rag_enabled=False,
-            rag_jobs_enabled=False,
-        )
-    )
-
-
 def create_portal_app():
     """Portal uses the configured local RAG backend when explicitly enabled."""
     return create_app(
         Settings(
             seed_demo_on_start=True,
-            mock_webhook_mode="business",
             rag_jobs_enabled=Settings().rag_enabled,
             background_jobs_enabled=True,
         )

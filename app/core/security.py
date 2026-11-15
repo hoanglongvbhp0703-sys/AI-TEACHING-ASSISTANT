@@ -21,8 +21,8 @@ def matches(value, expected):
 
 def clean(settings, value):
     for secret in [
-        settings.mock_webhook_secret,
         settings.claude_api_key.get_secret_value(),
+        settings.zalo_bot_token.get_secret_value(),
         *settings.auth_tokens_json,
     ]:
         if secret:

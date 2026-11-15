@@ -22,6 +22,8 @@ class EventService:
         now = self.clock.stamp()
         digest = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
         text = body.message.text.strip()
+        has_command = bool(re.match(r"^/hoi(?:\s+|$)", text))
+        question = text[4:].strip() if has_command else text
         with self.db.write() as s:
             old = s.one(
                 "SELECT * FROM webhook_events WHERE platform=:p AND external_event_id=:e",
@@ -75,23 +77,25 @@ class EventService:
                 s.update("webhook_events", "event_key", key, user_id=identity["user_id"])
             if body.is_bot_message or (identity and identity["is_bot"]):
                 status, outcome = "ignored", "bot_message"
-            elif not re.match(r"^/hoi(?:\s+|$)", text):
-                status, outcome = "ignored", "not_a_question"
             else:
                 event = s.one("SELECT * FROM webhook_events WHERE event_key=:e", e=key)
-                if not group or not identity or not event_access(s, event):
+                if not group or not event_access(s, event):
                     status, outcome = "rejected", "access_denied"
-                elif not text[4:].strip():
+                elif not question:
                     status, outcome = "completed", "empty_question"
                     queue(
-                        s, event, "validation_notice", "Hãy nhập /hoi và câu hỏi cần hỗ trợ.", now
+                        s,
+                        event,
+                        "validation_notice",
+                        "Bạn muốn hỏi điều gì?",
+                        now,
                     )
                 else:
                     s.update(
                         "webhook_events",
                         "event_key",
                         key,
-                        question_redacted=clean(self.settings, text[4:].strip()),
+                        question_redacted=clean(self.settings, question),
                     )
                     denied = reserve(s, event, self.clock, self.settings)
                     status, outcome = ("rejected", denied) if denied else ("queued", None)
@@ -119,7 +123,7 @@ class EventService:
         now = self.clock.stamp()
         with self.db.write() as s:
             event = s.one(
-                "SELECT * FROM webhook_events WHERE (status='queued' AND next_attempt_at<=:n) OR (status='processing' AND lease_expires_at<=:n) ORDER BY received_at,event_key LIMIT 1",
+                "SELECT * FROM webhook_events WHERE platform='zalo_bot' AND ((status='queued' AND next_attempt_at<=:n) OR (status='processing' AND lease_expires_at<=:n)) ORDER BY received_at,event_key LIMIT 1",
                 n=now,
             )
             if not event:
@@ -367,7 +371,7 @@ class EventService:
             event_key=event["event_key"],
             class_id=event["class_id"],
             group_binding_id=event["group_binding_id"],
-            student_id=event["user_id"],
+            requester_user_id=event["user_id"],
             question_redacted=event["question_redacted"],
             reason_code="insufficient_evidence",
             evidence_summary_redacted=reason,

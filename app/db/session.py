@@ -74,7 +74,19 @@ class Database:
                 ).read_text()
                 connection.executescript(sql)
                 version = 4
-            if version != 4:
+            if version == 4:
+                import fcntl
+
+                from app.db.class_only_migration import migrate_class_only
+
+                with Path(self.engine.url.database).with_suffix(".worker.lock").open("a") as lock:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        raise RuntimeError("Dừng backend cũ trước khi nâng schema v5.") from None
+                    migrate_class_only(connection)
+                version = 5
+            if version != 5:
                 raise RuntimeError("Unsupported database migration version.")
         finally:
             connection.close()

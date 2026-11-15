@@ -4,7 +4,7 @@ import pytest
 from app.core.errors import AppError
 from app.rag.local_backend import LocalRAG
 from app.rag.provider import Claim, ClaudeGateway, GroundedAnswer, Quote
-from app.schemas.event import MockEvent
+from app.schemas.event import IncomingEvent
 from tests.conftest import drain, payload, upload
 
 
@@ -53,7 +53,7 @@ def local(rig, tmp_path):
 
 def process(app, text="/hoi Question", eid="local-rag"):
     receipt = app.state.events.receive(
-        MockEvent.model_validate(payload(eid=eid, text=text)), "request-test"
+        IncomingEvent.model_validate(payload(eid=eid, text=text)), "request-test"
     )
     app.state.events.process_one()
     app.state.worker.send_one()
@@ -131,10 +131,8 @@ def test_llm_error_is_sanitized(local):
     gateway.close()
 
 
-def test_business_http_callback_waits_for_ack_and_retries(local, monkeypatch):
+def test_zalo_send_waits_for_api_ack_and_retries(local, monkeypatch):
     app, c, _, clock = local
-    app.state.settings.mock_outbound_http_enabled = True
-    app.state.settings.simulator_business_mode = True
     upload(c)
     drain(app)
     attempted = []
@@ -151,19 +149,14 @@ def test_business_http_callback_waits_for_ack_and_retries(local, monkeypatch):
     clock.value += timedelta(seconds=6)
 
     def success(*args, **kwargs):
-        import json
-
-        reply = json.loads(kwargs["content"])
-        return httpx.Response(
-            200, json={"data": {"reply_id": reply["reply_id"], "status": "received"}}
-        )
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": "DELIVERED"}})
 
     monkeypatch.setattr(httpx, "post", success)
     assert app.state.worker.send_one()
     with app.state.db.read() as s:
         row = s.one("SELECT * FROM outbound_messages WHERE id=:i", i=out["id"])
         assert row["status"] == "sent" and row["attempts"] == 2
-    assert attempted[0]["headers"]["X-Webhook-Signature"].startswith("sha256=")
+    assert attempted[0]["json"]["chat_id"] == "TEST-GS"
 
 
 def test_qdrant_presearch_filters_other_class_even_with_identical_vectors(local):
@@ -206,13 +199,13 @@ def test_live_rag_generation_progress_and_class_acl(local):
 
     backend.gateway.generate = slow_generate
     receipt = app.state.events.receive(
-        MockEvent.model_validate(payload(eid="progress-test")), "request-progress"
+        IncomingEvent.model_validate(payload(eid="progress-test")), "request-progress"
     )
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(app.state.events.process_one)
         try:
             assert entered.wait(timeout=5)
-            response = c.get("/api/v1/events/" + receipt["event_key"], headers=auth("HV_GS_01"))
+            response = c.get("/api/v1/events/" + receipt["event_key"], headers=auth("teacher-gs"))
             progress = response.json()["data"]["progress"]
             assert progress["stage"] == "generate" and progress["percent"] == 75
             assert (
@@ -277,40 +270,28 @@ def test_low_scores_still_call_claude_and_its_insufficient_result_hands_off(loca
         )
 
 
-def test_quota_callback_reports_no_rag_or_provider_call(local, monkeypatch):
-    import json
-
+def test_quota_notice_does_not_call_rag_or_provider(local, monkeypatch):
     from app.core.clock import day_key
+    from app.services.progress_service import event_progress
+    from app.services.quota_service import usage_key
 
     app, _, _, clock = local
-    app.state.settings.mock_outbound_http_enabled = True
     with app.state.db.write() as s:
         s.insert(
             "daily_usage",
-            user_id="HV_GS_01",
+            usage_key=usage_key({"platform": "zalo_bot", "raw_sender_id": "HV_GS_01"}),
             local_date=day_key(clock.now()),
             accepted_count=30,
             updated_at=clock.stamp(),
         )
-    receipt = app.state.events.receive(
-        MockEvent.model_validate(payload(eid="quota-outcome-progress")), "request-quota"
-    )
-    assert receipt["status"] == "rejected"
-    callbacks = []
-
-    def ack(*args, **kwargs):
-        body = json.loads(kwargs["content"])
-        callbacks.append(body)
-        return httpx.Response(
-            200, json={"data": {"reply_id": body["reply_id"], "status": "received"}}
-        )
-
-    monkeypatch.setattr(httpx, "post", ack)
-    assert app.state.worker.send_one()
-    progress = callbacks[0]["processing"]
-    assert progress["percent"] == 0 and progress["outcome_code"] == "quota_exceeded"
-    assert progress["llm_called"] is False and progress["retrieval_called"] is False
+    receipt = app.state.events.receive(IncomingEvent.model_validate(payload(eid="quota")), "test")
+    assert receipt["outcome_code"] == "quota_exceeded"
+    drain(app)
     with app.state.db.read() as s:
+        event = s.one("SELECT * FROM webhook_events WHERE event_key=:e", e=receipt["event_key"])
+        progress = event_progress(s, event)
+        assert progress["percent"] == 0
+        assert not progress["llm_called"] and not progress["retrieval_called"]
         assert not s.all("SELECT * FROM rag_runs")
 
 

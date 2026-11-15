@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.main import create_app
 from app.repositories.store import uid
-from app.schemas.event import MockEvent
+from app.schemas.event import IncomingEvent
 
 QUESTIONS = [
     (
@@ -109,7 +109,7 @@ def setup_class(app):
                 "group_bindings",
                 id="ZGROUP_ML01",
                 class_id="ML-DEMO-01",
-                platform="mock_zalo",
+                platform="zalo_bot",
                 external_group_id="ZGROUP_ML01",
                 display_name="Machine Learning",
                 created_at=now,
@@ -118,30 +118,6 @@ def setup_class(app):
             "INSERT OR IGNORE INTO teacher_assignments(teacher_id,class_id,assigned_at) VALUES ('teacher-gs','ML-DEMO-01',:n)",
             n=now,
         )
-        s.execute(
-            "INSERT OR IGNORE INTO enrollments(user_id,class_id,joined_at,updated_at) VALUES ('HV_GS_01','ML-DEMO-01',:n,:n)",
-            n=now,
-        )
-        for student in ["ML-DEMO-STUDENT", "ML-EVAL-STUDENT"]:
-            if not s.one("SELECT id FROM users WHERE id=:u", u=student):
-                s.insert(
-                    "users",
-                    id=student,
-                    display_name="Học viên " + student,
-                    role="student",
-                    created_at=now,
-                    updated_at=now,
-                )
-            s.execute(
-                "INSERT OR IGNORE INTO enrollments(user_id,class_id,joined_at,updated_at) VALUES (:u,'ML-DEMO-01',:n,:n)",
-                u=student,
-                n=now,
-            )
-            s.execute(
-                "INSERT OR IGNORE INTO external_identities(id,user_id,platform,external_sender_id,created_at) VALUES (:u,:u,'mock_zalo',:u,:n)",
-                u=student,
-                n=now,
-            )
         return s.one("SELECT * FROM users WHERE id='admin'")
 
 
@@ -177,7 +153,7 @@ def run():
         seed_demo_on_start=True,
         background_jobs_enabled=False,
         rate_limit_enabled=False,
-        mock_outbound_http_enabled=False,
+        zalo_bot_enabled=False,
         job_lease_seconds=900,
         **options,
     )
@@ -231,7 +207,7 @@ def run():
                         s.execute(
                             "UPDATE conversation_sessions SET status='closed' WHERE class_id='ML-DEMO-01' AND status='open'"
                         )
-                event = MockEvent(
+                event = IncomingEvent(
                     event_id=uid(),
                     group_id="ZGROUP_ML01",
                     sender_id="ML-EVAL-STUDENT",

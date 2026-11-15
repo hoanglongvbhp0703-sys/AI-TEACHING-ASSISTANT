@@ -12,17 +12,72 @@ from app.schemas.identity import (
     BotUpdate,
     ClassCreate,
     CourseCreate,
-    EnrollmentUpdate,
     GroupCreate,
     IdentityCreate,
-    RosterMetadata,
     UserActive,
     UserCreate,
+    ZaloBotBinding,
 )
 from app.services.access_service import check_class, class_ids
-from app.services.roster_service import ensure_roster, roster
 
 router = APIRouter(tags=["Identity & classes"])
+
+
+@router.get("/integrations/zalo-bot/inbox", response_model=Envelope[Any])
+def zalo_inbox(request: Request, user=Depends(admin)):
+    with request.app.state.db.read() as s:
+        return ok(
+            request,
+            s.all(
+                "SELECT event_key,raw_group_id,raw_sender_id,class_id,user_id,status,outcome_code,received_at FROM webhook_events WHERE platform='zalo_bot' ORDER BY received_at DESC LIMIT 50"
+            ),
+        )
+
+
+@router.post("/integrations/zalo-bot/bindings", response_model=Envelope[Any])
+def zalo_bind(body: ZaloBotBinding, request: Request, user=Depends(admin)):
+    settings = request.app.state.settings
+    require(settings.zalo_bot_enabled, 409, "zalo_disabled", "Zalo Bot chưa được bật.")
+    bot_id = settings.zalo_bot_token.get_secret_value().split(":", 1)[0]
+    require(
+        body.chat_id.startswith(bot_id + ":"),
+        422,
+        "invalid_bot_binding",
+        "Dùng ID cuộc chat từ inbox.",
+    )
+    with request.app.state.db.write() as s:
+        check_class(s, user, body.class_id)
+        group = s.one(
+            "SELECT * FROM group_bindings WHERE platform='zalo_bot' AND external_group_id=:g",
+            g=body.chat_id,
+        )
+        require(
+            not group or group["class_id"] == body.class_id,
+            409,
+            "binding_conflict",
+            "Cuộc chat đã thuộc lớp khác.",
+        )
+        now = request.app.state.clock.stamp()
+        if not group:
+            s.insert(
+                "group_bindings",
+                id=uid(),
+                platform="zalo_bot",
+                external_group_id=body.chat_id,
+                class_id=body.class_id,
+                display_name="Zalo Bot · " + body.class_id,
+                created_at=now,
+            )
+        s.audit(
+            user["id"],
+            "zalo_bot.bind",
+            "class",
+            body.class_id,
+            now,
+            request.state.request_id,
+            body.model_dump(),
+        )
+        return ok(request, body.model_dump())
 
 
 @router.get("/auth/me", response_model=Envelope[Any])
@@ -37,7 +92,7 @@ def users(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     query: str = Query("", max_length=200),
-    role: Literal["student", "teacher", "admin", "service"] | None = None,
+    role: Literal["teacher", "admin", "service"] | None = None,
     user=Depends(admin),
 ):
     with request.app.state.db.read() as s:
@@ -159,10 +214,7 @@ def create_class(body: ClassCreate, request: Request, user=Depends(admin)):
             "invalid_course",
             "Khóa học không tồn tại hoặc đã ngừng hoạt động.",
         )
-        s.insert(
-            "classes", **body.model_dump(exclude={"student_count"}), created_at=now, updated_at=now
-        )
-        ensure_roster(s, body.id, body.student_count, now)
+        s.insert("classes", **body.model_dump(), created_at=now, updated_at=now)
         s.insert("access_scopes", id="class:" + body.id, scope_type="class", class_id=body.id)
         s.audit(user["id"], "class.create", "class", body.id, now, request.state.request_id)
         return ok(request, s.one("SELECT * FROM classes WHERE id=:id", id=body.id))
@@ -186,19 +238,6 @@ def bot(class_id: str, body: BotUpdate, request: Request, user=Depends(admin)):
         return ok(request, s.one("SELECT * FROM classes WHERE id=:id", id=class_id))
 
 
-@router.get("/classes/{class_id}/members", response_model=Envelope[Any])
-def members(
-    class_id: str,
-    request: Request,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    user=Depends(staff),
-):
-    with request.app.state.db.read() as s:
-        check_class(s, user, class_id)
-        return ok(request, roster(s, class_id)[offset : offset + limit])
-
-
 @router.get("/classes/{class_id}/teachers", response_model=Envelope[Any])
 def teachers(class_id: str, request: Request, user=Depends(current_user)):
     with request.app.state.db.read() as s:
@@ -212,51 +251,6 @@ def teachers(class_id: str, request: Request, user=Depends(current_user)):
             rows
             if user["role"] == "admin"
             else [row for row in rows if row["user_active"] and row["assignment_active"]],
-        )
-
-
-@router.put("/classes/{class_id}/members/{student_id}", response_model=Envelope[Any])
-def enroll(
-    class_id: str, student_id: str, body: EnrollmentUpdate, request: Request, user=Depends(admin)
-):
-    with request.app.state.db.write() as s:
-        check_class(s, user, class_id)
-        require(
-            s.one(
-                "SELECT id FROM users WHERE id=:u AND role='student' AND is_active=1", u=student_id
-            ),
-            422,
-            "invalid_student",
-            "Cần tài khoản học viên đang hoạt động.",
-        )
-        now = request.app.state.clock.stamp()
-        s.execute(
-            "INSERT INTO enrollments (user_id,class_id,status,joined_at,updated_at) VALUES (:u,:c,:st,:n,:n) ON CONFLICT(user_id,class_id) DO UPDATE SET status=:st,updated_at=:n",
-            u=student_id,
-            c=class_id,
-            st=body.status,
-            n=now,
-        )
-        if body.status == "active":
-            from app.services.roster_service import ensure_mock_identity
-
-            ensure_mock_identity(s, student_id, now)
-        s.audit(
-            user["id"],
-            "enrollment.update",
-            "class",
-            class_id,
-            now,
-            request.state.request_id,
-            {"student_id": student_id, "status": body.status},
-        )
-        return ok(
-            request,
-            s.one(
-                "SELECT * FROM enrollments WHERE user_id=:u AND class_id=:c",
-                u=student_id,
-                c=class_id,
-            ),
         )
 
 
@@ -307,9 +301,7 @@ def bind_group(body: GroupCreate, request: Request, user=Depends(admin)):
         check_class(s, user, body.class_id)
         now = request.app.state.clock.stamp()
         key = uid()
-        s.insert(
-            "group_bindings", id=key, platform="mock_zalo", **body.model_dump(), created_at=now
-        )
+        s.insert("group_bindings", id=key, **body.model_dump(), created_at=now)
         s.audit(user["id"], "group.bind", "group", key, now, request.state.request_id)
         return ok(request, s.one("SELECT * FROM group_bindings WHERE id=:id", id=key))
 
@@ -325,29 +317,6 @@ def bind_identity(body: IdentityCreate, request: Request, user=Depends(admin)):
         )
         now = request.app.state.clock.stamp()
         key = uid()
-        s.insert(
-            "external_identities", id=key, platform="mock_zalo", **body.model_dump(), created_at=now
-        )
+        s.insert("external_identities", id=key, **body.model_dump(), created_at=now)
         s.audit(user["id"], "identity.bind", "identity", key, now, request.state.request_id)
         return ok(request, s.one("SELECT * FROM external_identities WHERE id=:id", id=key))
-
-
-@router.put("/classes/{class_id}/roster", response_model=Envelope[Any])
-def update_roster(class_id: str, body: RosterMetadata, request: Request, user=Depends(admin)):
-    with request.app.state.db.write() as s:
-        check_class(s, user, class_id)
-        now = request.app.state.clock.stamp()
-        created = ensure_roster(s, class_id, body.student_count, now)
-        s.audit(
-            user["id"],
-            "class.roster.update",
-            "class",
-            class_id,
-            now,
-            request.state.request_id,
-            {"student_count": body.student_count, "created": len(created)},
-        )
-        return ok(
-            request,
-            {"class_id": class_id, "created": len(created), "students": roster(s, class_id)},
-        )
