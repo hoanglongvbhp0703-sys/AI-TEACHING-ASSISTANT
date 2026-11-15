@@ -31,7 +31,7 @@ def current_user(
         raise AppError(401, "unauthorized", "Thông tin đăng nhập không hợp lệ.")
     with request.app.state.db.read() as s:
         user = s.one("SELECT * FROM users WHERE id=:id AND is_active=1", id=user_id)
-    require(user is not None, 401, "unauthorized", "Tài khoản không còn hiệu lực.")
+    require(user is not None and user["role"] in {"admin", "teacher"}, 401, "unauthorized", "Tài khoản không còn hiệu lực.")
     if session and session["class_id"]:
         user["session_class_id"] = session["class_id"]
     return user
@@ -44,12 +44,6 @@ def staff(user=Depends(current_user)):
 
 def admin(user=Depends(current_user)):
     require(user["role"] == "admin")
-    return user
-
-
-def local_adapter(request: Request, user=Depends(current_user)):
-    require(request.app.state.settings.mock_ui_enabled, 404, "not_found", "Mock API đang tắt.")
-    require(user["role"] in {"admin", "service"})
     return user
 
 

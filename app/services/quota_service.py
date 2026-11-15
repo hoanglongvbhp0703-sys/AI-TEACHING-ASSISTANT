@@ -1,14 +1,21 @@
+import hashlib
 from datetime import timedelta
 
 from app.core.clock import day_key, reset_at, stamp
 
 
+def usage_key(event):
+    return hashlib.sha256((event["platform"] + ":" + event["raw_sender_id"]).encode()).hexdigest()
+
+
 def reserve(s, event, clock, settings):
+    key = usage_key(event)
     now = clock.now()
     if settings.rate_limit_enabled:
         recent = s.one(
-            "SELECT count(*) AS n FROM webhook_events WHERE user_id=:u AND accepted_at>:cut AND accepted_at IS NOT NULL AND event_key!=:e",
-            u=event["user_id"],
+            "SELECT count(*) AS n FROM webhook_events WHERE platform=:p AND raw_sender_id=:sender AND accepted_at>:cut AND accepted_at IS NOT NULL AND event_key!=:e",
+            p=event["platform"],
+            sender=event["raw_sender_id"],
             cut=stamp(now - timedelta(minutes=1)),
             e=event["event_key"],
         )["n"]
@@ -17,14 +24,14 @@ def reserve(s, event, clock, settings):
     day = day_key(now)
     ts = stamp(now)
     s.execute(
-        "INSERT OR IGNORE INTO daily_usage (user_id,local_date,accepted_count,updated_at) VALUES (:u,:d,0,:n)",
-        u=event["user_id"],
+        "INSERT OR IGNORE INTO daily_usage (usage_key,local_date,accepted_count,updated_at) VALUES (:u,:d,0,:n)",
+        u=key,
         d=day,
         n=ts,
     )
     changed = s.execute(
-        "UPDATE daily_usage SET accepted_count=accepted_count+1,updated_at=:n WHERE user_id=:u AND local_date=:d AND accepted_count<30",
-        u=event["user_id"],
+        "UPDATE daily_usage SET accepted_count=accepted_count+1,updated_at=:n WHERE usage_key=:u AND local_date=:d AND accepted_count<30",
+        u=key,
         d=day,
         n=ts,
     ).rowcount
@@ -33,7 +40,7 @@ def reserve(s, event, clock, settings):
     s.insert(
         "quota_reservations",
         event_key=event["event_key"],
-        user_id=event["user_id"],
+        usage_key=key,
         local_date=day,
         status="reserved",
         reserved_at=ts,
@@ -56,23 +63,23 @@ def release(s, event_key, now, reason):
             release_reason=reason,
         )
         s.execute(
-            "UPDATE daily_usage SET accepted_count=accepted_count-1,updated_at=:n WHERE user_id=:u AND local_date=:d",
+            "UPDATE daily_usage SET accepted_count=accepted_count-1,updated_at=:n WHERE usage_key=:u AND local_date=:d",
             n=now,
-            u=reservation["user_id"],
+            u=reservation["usage_key"],
             d=reservation["local_date"],
         )
 
 
-def quota(s, user_id, clock):
+def quota(s, usage_key, clock):
     day = day_key(clock.now())
     row = s.one(
-        "SELECT accepted_count FROM daily_usage WHERE user_id=:u AND local_date=:d",
-        u=user_id,
+        "SELECT accepted_count FROM daily_usage WHERE usage_key=:u AND local_date=:d",
+        u=usage_key,
         d=day,
     )
     used = row["accepted_count"] if row else 0
     return {
-        "user_id": user_id,
+        "usage_key": usage_key,
         "local_date": day,
         "limit": 30,
         "used": used,

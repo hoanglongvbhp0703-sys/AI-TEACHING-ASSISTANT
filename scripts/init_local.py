@@ -16,14 +16,11 @@ def main():
     env = Path(".env")
     if not env.exists():
         tokens = {
-            secrets.token_urlsafe(32): u
-            for u in ["admin", "teacher-gs", "teacher-ai", "adapter", "HV_GS_01", "student-shared"]
+            secrets.token_urlsafe(32): u for u in ["admin", "teacher-gs", "teacher-ai"]
         }
         content = (
-            "APP_ENV=local\nSEED_DEMO_ON_START=true\nMOCK_WEBHOOK_AUTH_MODE=hmac\nAUTH_TOKENS_JSON="
+            "APP_ENV=local\nSEED_DEMO_ON_START=true\nAUTH_TOKENS_JSON="
             + json.dumps(tokens, separators=(",", ":"))
-            + "\nMOCK_WEBHOOK_SECRET="
-            + secrets.token_urlsafe(32)
             + "\n"
         )
         with env.open("x") as stream:
@@ -42,7 +39,7 @@ def main():
     finally:
         db.engine.dispose()
     print(
-        "SQLite schema v4 and demo users/classes initialized. Start: .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1"
+        "SQLite schema v5 and demo users/classes initialized. Start: .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1"
     )
 
 

@@ -48,7 +48,7 @@ class AuthService:
             return None
         with self.db.read() as s:
             return s.one(
-                "SELECT a.user_id,a.class_id FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=:h AND a.revoked_at IS NULL AND a.expires_at>:n AND u.is_active=1 AND (a.class_id IS NULL OR EXISTS(SELECT 1 FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.user_id=u.id AND e.class_id=a.class_id AND e.status='active' AND c.status='active'))",
+                "SELECT a.user_id,a.class_id FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=:h AND a.revoked_at IS NULL AND a.expires_at>:n AND u.is_active=1 AND u.role IN ('admin','teacher')",
                 h=hashlib.sha256(token.encode()).hexdigest(),
                 n=self.clock.stamp(),
             )
@@ -64,24 +64,6 @@ class AuthService:
                     "profiles": s.all(
                         "SELECT u.display_name,c.username FROM users u JOIN user_credentials c ON c.user_id=u.id WHERE u.role='teacher' AND u.is_active=1 ORDER BY u.display_name,u.id"
                     )
-                }
-            if role == "student":
-                classes = s.all(
-                    "SELECT id,name FROM classes WHERE status='active' ORDER BY name,id"
-                )
-                profiles = (
-                    s.all(
-                        "SELECT e.student_number,c.username FROM enrollments e JOIN users u ON u.id=e.user_id LEFT JOIN user_credentials c ON c.user_id=u.id WHERE e.class_id=:c AND e.status='active' AND u.is_active=1 AND u.role='student' ORDER BY e.student_number",
-                        c=class_id,
-                    )
-                    if class_id in {c["id"] for c in classes}
-                    else []
-                )
-                return {
-                    "classes": classes,
-                    "profiles": [
-                        {**p, "display_name": f"Học viên {p['student_number']}"} for p in profiles
-                    ],
                 }
             return {"profiles": []}
 
@@ -182,23 +164,11 @@ class AuthService:
                 name=body.username,
             )
             locked = current and current["locked_until"] and current["locked_until"] > now
-            allowed = (
-                current
-                and current["is_active"]
-                and current["role"] in {"admin", "teacher", "student"}
-            )
+            allowed = current and current["is_active"] and current["role"] in {"admin", "teacher"}
             if allowed and body.role is not None:
                 allowed = current["role"] == body.role
-            if allowed and body.role == "student" and body.class_id is None:
+            if body.class_id is not None:
                 allowed = False
-            if allowed and body.class_id is not None:
-                allowed = current["role"] == "student" and bool(
-                    s.one(
-                        "SELECT e.user_id FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.user_id=:u AND e.class_id=:c AND e.status='active' AND c.status='active'",
-                        u=current["user_id"],
-                        c=body.class_id,
-                    )
-                )
             unchanged = current and initial and current["password_hash"] == initial["password_hash"]
             if valid and unchanged and allowed and not locked:
                 s.update(
@@ -250,7 +220,7 @@ class AuthService:
             user = s.one("SELECT id,role FROM users WHERE id=:u", u=user_id)
             require(user is not None, 404, "not_found", "Không tìm thấy người dùng.")
             require(
-                user["role"] in {"student", "teacher", "admin"},
+                user["role"] in {"teacher", "admin"},
                 422,
                 "invalid_user",
                 "Tài khoản dịch vụ không dùng mật khẩu đăng nhập.",

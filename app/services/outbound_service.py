@@ -53,11 +53,9 @@ def queue(s, event, kind, text, now, citations=None, ticket_id=None, reply_id=No
 
 def event_access(s, event):
     return s.one(
-        "SELECT u.id FROM users u JOIN enrollments e ON e.user_id=u.id JOIN classes c ON c.id=e.class_id JOIN group_bindings g ON g.class_id=c.id WHERE u.id=:u AND u.is_active=1 AND u.role='student' AND e.status='active' AND c.id=:c AND c.status='active' AND c.bot_enabled=1 AND g.id=:g AND g.is_active=1 AND (:p='portal' OR (g.platform=:p AND g.external_group_id=:raw_group AND EXISTS(SELECT 1 FROM external_identities i WHERE i.user_id=u.id AND i.platform=:p AND i.external_sender_id=:sender AND i.is_active=1 AND i.is_bot=0)))",
-        u=event["user_id"],
-        c=event["class_id"],
+        "SELECT g.id FROM group_bindings g JOIN classes c ON c.id=g.class_id WHERE g.id=:g AND g.class_id=:c AND g.platform=:p AND g.external_group_id=:raw_group AND g.is_active=1 AND c.status='active' AND c.bot_enabled=1",
         g=event["group_binding_id"],
+        c=event["class_id"],
         p=event["platform"],
         raw_group=event["raw_group_id"],
-        sender=event["raw_sender_id"],
     )

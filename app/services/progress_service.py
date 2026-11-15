@@ -18,7 +18,6 @@ ERRORS = {
     "ingestion_failure": "Index chưa hoàn tất. Xem mã lỗi và log backend.",
     "model_unavailable": "Model chưa sẵn sàng.",
     "llm_transport_error": "Không kết nối được model sinh câu trả lời.",
-    "mock_callback_failed": "Đang thử gửi lại phản hồi về giả lập.",
     "rag_deferred": "File đã lưu; lập chỉ mục đang tắt.",
 }
 
@@ -153,7 +152,7 @@ def event_progress(s, event):
             "stage": "send",
             "percent": 95,
             "status": "processing",
-            "label": "Đang gửi phản hồi về giả lập",
+            "label": "Đang gửi phản hồi về Zalo",
             "error_code": out["error_code"],
         }
     call = (

@@ -12,15 +12,6 @@ def class_ids(s, user):
                 u=user["id"],
             )
         }
-    if user["role"] == "student":
-        return {
-            r["class_id"]
-            for r in s.all(
-                "SELECT e.class_id FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.user_id=:u AND e.status='active' AND c.status='active' AND (:sc IS NULL OR e.class_id=:sc)",
-                u=user["id"],
-                sc=user.get("session_class_id"),
-            )
-        }
     return set()
 
 

@@ -17,7 +17,7 @@ def main():
     )
     if not token:
         raise SystemExit("Missing local admin token; run scripts/init_local.py first.")
-    with httpx.Client(base_url="http://127.0.0.1:8000", timeout=5, trust_env=False) as client:
+    with httpx.Client(base_url="http://127.0.0.1:8002", timeout=5, trust_env=False) as client:
         for path in [
             "/api/v1/health",
             "/api/v1/auth/me",

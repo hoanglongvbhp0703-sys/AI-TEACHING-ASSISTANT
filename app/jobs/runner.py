@@ -331,22 +331,27 @@ class Worker:
     def send_one(self):
         with self.db.write() as s:
             row = s.one(
-                "SELECT * FROM outbound_messages WHERE (status='pending' AND next_attempt_at<=:n) OR (status='sending' AND lease_expires_at<=:n) ORDER BY rowid LIMIT 1",
+                "SELECT o.* FROM outbound_messages o JOIN webhook_events e ON e.event_key=o.event_key WHERE (:zalo_enabled=1 OR e.platform!='zalo_bot') AND ((o.status='pending' AND o.next_attempt_at<=:n) OR (o.status='sending' AND o.lease_expires_at<=:n)) ORDER BY o.rowid LIMIT 1",
                 n=self.clock.stamp(),
+                zalo_enabled=int(self.settings.zalo_bot_enabled),
             )
             if not row:
                 return False
             event = s.one("SELECT * FROM webhook_events WHERE event_key=:e", e=row["event_key"])
+            if event["platform"] != "zalo_bot":
+                s.update(
+                    "outbound_messages",
+                    "id",
+                    row["id"],
+                    status="cancelled",
+                    error_code="transport_removed",
+                )
+                return True
             now = self.clock.stamp()
             # Policy notice intentionally reports denial. All business replies recheck current access.
             if row["message_kind"] not in {"policy_notice", "validation_notice"}:
                 access = event_access(s, event)
                 if row["message_kind"] == "teacher_answer":
-                    access = s.one(
-                        "SELECT u.id FROM users u JOIN enrollments e ON e.user_id=u.id JOIN group_bindings g ON g.class_id=e.class_id WHERE u.id=:u AND u.is_active=1 AND e.status='active' AND g.id=:g AND g.is_active=1",
-                        u=event["user_id"],
-                        g=event["group_binding_id"],
-                    )
                     reply = s.one(
                         "SELECT r.*,u.role,u.is_active FROM ticket_replies r JOIN users u ON u.id=r.teacher_id WHERE r.id=:r",
                         r=row["ticket_reply_id"],
@@ -408,119 +413,48 @@ class Worker:
                 s.security(
                     "citation_revoked_before_send", event["request_id"], now, event["event_key"]
                 )
-            if self.settings.mock_outbound_http_enabled and event["platform"] == "mock_zalo":
-                if row["attempts"] >= row["max_attempts"]:
-                    s.update(
-                        "outbound_messages",
-                        "id",
-                        row["id"],
-                        status="failed",
-                        error_code="callback_retry_exhausted",
-                    )
-                    return True
-                token = uid()
-                s.update(
-                    "outbound_messages",
-                    "id",
-                    row["id"],
-                    status="sending",
-                    lease_token=token,
-                    lease_expires_at=stamp(self.clock.now() + timedelta(seconds=30)),
-                    attempts=row["attempts"] + 1,
-                )
                 row = s.one("SELECT * FROM outbound_messages WHERE id=:i", i=row["id"])
-                group = s.one(
-                    "SELECT external_group_id FROM group_bindings WHERE id=:g",
-                    g=row["group_binding_id"],
-                )
-                delivery = (row, group["external_group_id"], token)
-            else:
-                delivery = None
-            if delivery is None:
+            if event["platform"] == "zalo_bot" and not self.settings.zalo_bot_enabled:
+                # Never mark a real reply sent while its transport is disabled.
+                return False
+            if row["attempts"] >= row["max_attempts"]:
                 s.update(
                     "outbound_messages",
                     "id",
                     row["id"],
-                    status="sent",
-                    sent_at=now,
-                    attempts=row["attempts"] + 1,
-                    external_message_id=row["id"],
+                    status="failed",
+                    error_code="outbound_retry_exhausted",
                 )
-                if row["message_kind"] == "teacher_answer":
-                    s.execute(
-                        "UPDATE support_tickets SET status='answered',answered_at=:n,updated_at=:n,revision=revision+1 WHERE id=:t AND status IN ('open','assigned')",
-                        n=now,
-                        t=row["ticket_id"],
-                    )
+                return True
+            token = uid()
+            s.update(
+                "outbound_messages",
+                "id",
+                row["id"],
+                status="sending",
+                lease_token=token,
+                lease_expires_at=stamp(self.clock.now() + timedelta(seconds=30)),
+                attempts=row["attempts"] + 1,
+            )
+            row = s.one("SELECT * FROM outbound_messages WHERE id=:i", i=row["id"])
+            group = s.one(
+                "SELECT external_group_id FROM group_bindings WHERE id=:g",
+                g=row["group_binding_id"],
+            )
+            delivery = (row, group["external_group_id"], token)
         if delivery:
-            self.deliver_callback(*delivery)
+            self.deliver_zalo(*delivery[:3])
         return True
 
-    def deliver_callback(self, row, group_id, token):
-        import httpx
+    def deliver_zalo(self, row, group_id, token):
+        from app.integrations.zalo_bot import BotAPIError, BotClient
 
-        from app.integrations.mock_zalo_adapter import sign_payload
-        from app.schemas.connection import ConnectionReply
-        from app.services.progress_service import terminal_progress
-
-        with self.db.read() as s:
-            event = s.one(
-                "SELECT outcome_code FROM webhook_events WHERE event_key=:e", e=row["event_key"]
-            )
-            run = s.one(
-                "SELECT id,evidence_reason_redacted FROM rag_runs WHERE event_key=:e",
-                e=row["event_key"],
-            )
-            flags = (
-                s.one(
-                    "SELECT MAX(stage='query_rewrite') AS rewrite_called,MAX(stage='query_embed') AS retrieval_called,MAX(stage='generate') AS llm_called FROM rag_run_attempts WHERE rag_run_id=:r",
-                    r=run["id"],
-                )
-                if run
-                else {}
-            )
-        processing = terminal_progress(
-            event["outcome_code"],
-            run["evidence_reason_redacted"] if run else None,
-            bool(flags.get("retrieval_called")),
-            bool(flags.get("llm_called")),
-            bool(flags.get("rewrite_called")),
-        )
-        reply = ConnectionReply(
-            reply_id=row["id"],
-            reply_to_event_id=row["reply_to_external_event_id"],
-            group_id=group_id,
-            kind=row["message_kind"],
-            text=row["text_redacted"],
-            ticket_id=row["ticket_id"],
-            citations=json.loads(row["citations_json"]),
-            processing=processing,
-        )
-        raw = reply.model_dump_json().encode()
-        timestamp = str(int(self.clock.now().timestamp()))
-        delivered = False
+        external_id = None
         try:
-            response = httpx.post(
-                self.settings.mock_callback_url,
-                content=raw,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Webhook-Timestamp": timestamp,
-                    "X-Webhook-Signature": sign_payload(
-                        self.settings.mock_webhook_secret, timestamp, raw
-                    ),
-                },
-                timeout=5,
-                trust_env=False,
-                follow_redirects=False,
+            external_id = BotClient(self.settings.zalo_bot_token.get_secret_value()).send(
+                group_id, row["text_redacted"]
             )
-            ack = response.json().get("data", {})
-            delivered = (
-                response.status_code == 200
-                and ack.get("reply_id") == row["id"]
-                and ack.get("status") in {"received", "duplicate_ignored"}
-            )
-        except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        except BotAPIError:
             pass
         with self.db.write() as s:
             fresh = s.one(
@@ -535,20 +469,20 @@ class Worker:
                 "outbound_messages",
                 "id",
                 row["id"],
-                status="sent" if delivered else "pending",
-                sent_at=now if delivered else None,
-                external_message_id=row["id"] if delivered else None,
+                status="sent" if external_id else "pending",
+                sent_at=now if external_id else None,
+                external_message_id=external_id,
                 next_attempt_at=stamp(self.clock.now() + timedelta(seconds=5)),
-                error_code=None if delivered else "mock_callback_failed",
+                error_code=None if external_id else "zalo_send_failed",
             )
-            if delivered and row["message_kind"] == "teacher_answer":
+            if external_id and row["message_kind"] == "teacher_answer":
                 s.execute(
                     "UPDATE support_tickets SET status='answered',answered_at=:n,updated_at=:n,revision=revision+1 WHERE id=:t AND status IN ('open','assigned')",
                     n=now,
                     t=row["ticket_id"],
                 )
         log.info(
-            "mock_callback status=%s reply_id=%s", "delivered" if delivered else "retry", row["id"]
+            "zalo_send status=%s reply_id=%s", "delivered" if external_id else "retry", row["id"]
         )
 
     def cleanup_one(self):

@@ -29,19 +29,18 @@ def insert(db, table, **values):
 
 
 def seed(db):
-    for uid, role in [("s", "student"), ("t", "teacher"), ("a", "admin")]:
+    for uid, role in [("s", "service"), ("t", "teacher"), ("a", "admin")]:
         insert(db, "users", id=uid, display_name=uid, role=role, created_at=NOW, updated_at=NOW)
     for course, cid in [("GS_KPI", "GS-KPI-01"), ("AI_AUTO", "AUTO-N8N-01")]:
         insert(db, "courses", id=course, name=course, created_at=NOW, updated_at=NOW)
         insert(db, "classes", id=cid, course_id=course, name=cid, created_at=NOW, updated_at=NOW)
-        insert(db, "enrollments", user_id="s", class_id=cid, joined_at=NOW, updated_at=NOW)
         insert(db, "teacher_assignments", teacher_id="t", class_id=cid, assigned_at=NOW)
         insert(
             db,
             "group_bindings",
             id="g-" + cid,
             class_id=cid,
-            platform="mock_zalo",
+            platform="zalo_bot",
             external_group_id="ext-" + cid,
             display_name=cid,
             created_at=NOW,
@@ -55,7 +54,7 @@ def event(db, eid="e1", cid="GS-KPI-01", external=None):
         "webhook_events",
         event_key=eid,
         request_id="req-" + eid,
-        platform="mock_zalo",
+        platform="zalo_bot",
         external_event_id=external or eid,
         raw_group_id="ext-" + cid,
         raw_sender_id="external-s",
@@ -140,22 +139,23 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
         self.db.close()
 
-    def test_schema_has_30_tables_and_fk_enabled(self):
+    def test_schema_has_29_tables_and_fk_enabled(self):
         count = self.db.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[
             0
         ]
-        self.assertEqual(count, 30)
+        self.assertEqual(count, 29)
         self.assertEqual(self.db.execute("PRAGMA foreign_keys").fetchone()[0], 1)
 
     def test_missing_identity_reference_is_rejected(self):
         with self.assertRaises(sqlite3.IntegrityError):
             insert(
                 self.db,
-                "enrollments",
+                "external_identities",
+                id="missing",
                 user_id="missing",
-                class_id="GS-KPI-01",
-                joined_at=NOW,
-                updated_at=NOW,
+                platform="zalo_bot",
+                external_sender_id="missing",
+                created_at=NOW,
             )
 
     def test_event_dedup_is_by_external_id_not_question(self):
@@ -315,7 +315,7 @@ class SchemaTests(unittest.TestCase):
             event_key="e1",
             class_id="GS-KPI-01",
             group_binding_id="g-GS-KPI-01",
-            student_id="s",
+            requester_user_id=None,
             question_redacted="q",
             reason_code="no_evidence",
             created_at=NOW,
@@ -349,9 +349,9 @@ class SchemaTests(unittest.TestCase):
     def test_quota_release_only_once_and_event_reserves_only_once(self):
         event(self.db)
         insert(
-            self.db, "daily_usage", user_id="s", local_date=DAY, accepted_count=1, updated_at=NOW
+            self.db, "daily_usage", usage_key="s", local_date=DAY, accepted_count=1, updated_at=NOW
         )
-        reserve = dict(user_id="s", local_date=DAY, status="reserved", reserved_at=NOW)
+        reserve = dict(usage_key="s", local_date=DAY, status="reserved", reserved_at=NOW)
         insert(self.db, "quota_reservations", event_key="e1", **reserve)
         with self.assertRaises(sqlite3.IntegrityError):
             insert(self.db, "quota_reservations", event_key="e1", **reserve)
@@ -364,7 +364,7 @@ class SchemaTests(unittest.TestCase):
             ).rowcount
             if changed:
                 self.db.execute(
-                    "UPDATE daily_usage SET accepted_count=accepted_count-1 WHERE user_id=? AND local_date=?",
+                    "UPDATE daily_usage SET accepted_count=accepted_count-1 WHERE usage_key=? AND local_date=?",
                     ("s", DAY),
                 )
             self.db.execute("COMMIT")
@@ -381,7 +381,7 @@ class SchemaTests(unittest.TestCase):
             db.executescript(DDL)
             seed(db)
             insert(
-                db, "daily_usage", user_id="s", local_date=DAY, accepted_count=29, updated_at=NOW
+                db, "daily_usage", usage_key="s", local_date=DAY, accepted_count=29, updated_at=NOW
             )
             db.close()
             barrier = threading.Barrier(2)
@@ -393,7 +393,7 @@ class SchemaTests(unittest.TestCase):
                     connection.execute("BEGIN IMMEDIATE")
                     changed = connection.execute(
                         "UPDATE daily_usage SET accepted_count=accepted_count+1 "
-                        "WHERE user_id=? AND local_date=? AND accepted_count<30",
+                        "WHERE usage_key=? AND local_date=? AND accepted_count<30",
                         ("s", DAY),
                     ).rowcount
                     connection.execute("COMMIT")
@@ -418,7 +418,7 @@ class SchemaTests(unittest.TestCase):
             event_key="e1",
             class_id="GS-KPI-01",
             group_binding_id="g-GS-KPI-01",
-            student_id="s",
+            requester_user_id=None,
             question_redacted="q",
             reason_code="no_evidence",
             created_at=NOW,

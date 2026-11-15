@@ -9,7 +9,7 @@ from app.schemas.common import DTO
 class UserCreate(OptionalCredentials):
     id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
     display_name: str = Field(min_length=1, max_length=200)
-    role: Literal["student", "teacher", "admin", "service"]
+    role: Literal["teacher", "admin", "service"]
 
     @field_validator("display_name")
     @classmethod
@@ -30,19 +30,10 @@ class CourseCreate(DTO):
 
 class ClassCreate(CourseCreate):
     course_id: str
-    student_count: int = Field(default=0, ge=0, le=500)
-
-
-class RosterMetadata(DTO):
-    student_count: int = Field(ge=1, le=500)
 
 
 class BotUpdate(DTO):
     bot_enabled: bool
-
-
-class EnrollmentUpdate(DTO):
-    status: Literal["active", "suspended", "left"] = "active"
 
 
 class AssignmentUpdate(DTO):
@@ -50,12 +41,19 @@ class AssignmentUpdate(DTO):
 
 
 class GroupCreate(DTO):
+    platform: Literal["zalo_bot"] = "zalo_bot"
     class_id: str
     external_group_id: str = Field(min_length=1, max_length=200)
     display_name: str = Field(min_length=1, max_length=200)
 
 
 class IdentityCreate(DTO):
+    platform: Literal["zalo_bot"] = "zalo_bot"
     user_id: str
     external_sender_id: str = Field(min_length=1, max_length=200)
     is_bot: bool = False
+
+
+class ZaloBotBinding(DTO):
+    class_id: str
+    chat_id: str = Field(min_length=1, max_length=150)

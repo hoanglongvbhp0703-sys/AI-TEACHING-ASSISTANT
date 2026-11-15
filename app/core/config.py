@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
@@ -12,16 +11,6 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/gos.db"
     upload_dir: Path = Path("data/uploads")
     staging_dir: Path = Path("data/staging")
-    mock_ui_enabled: bool = True
-    mock_webhook_secret: str = ""
-    mock_webhook_auth_mode: Literal["hmac", "secret"] = "hmac"
-    mock_webhook_mode: Literal["business", "connection"] = "business"
-    mock_outbound_http_enabled: bool = False
-    simulator_business_mode: bool = False
-    mock_backend_url: str = "http://127.0.0.1:8001"
-    mock_callback_url: str = "http://127.0.0.1:9000/api/mock/replies"
-    webhook_signature_tolerance_seconds: int = Field(default=300, ge=1, le=3600)
-    webhook_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
     auth_tokens_json: dict[str, str] = Field(default_factory=dict)
     seed_demo_on_start: bool = False
     rag_jobs_enabled: bool = True
@@ -50,6 +39,8 @@ class Settings(BaseSettings):
     claude_base_url: str = "https://hhtechapi.net"
     claude_model: str = "claude-sonnet-4.6"
     background_jobs_enabled: bool = True
+    zalo_bot_enabled: bool = False
+    zalo_bot_token: SecretStr = SecretStr("")
     job_poll_seconds: float = Field(default=1.0, ge=0.05, le=60)
     job_lease_seconds: int = Field(default=120, ge=10)
     job_max_attempts: int = Field(default=3, ge=1, le=10)
@@ -63,6 +54,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def local_only(self):
+        if self.zalo_bot_enabled and (
+            not self.zalo_bot_token.get_secret_value() or not self.background_jobs_enabled
+        ):
+            raise ValueError("Zalo Bot requires a token and background jobs.")
         if self.app_env not in {"local", "development", "test"}:
             raise ValueError(
                 "This release supports local/development/test only; production auth is not implemented."
@@ -71,8 +66,6 @@ class Settings(BaseSettings):
             raise ValueError("This release requires a file-based SQLite URL.")
         if any(len(token) < 24 for token in self.auth_tokens_json):
             raise ValueError("Auth tokens must have at least 24 characters.")
-        if self.mock_webhook_secret and len(self.mock_webhook_secret) < 24:
-            raise ValueError("Webhook secret must have at least 24 characters.")
         provider_url = urlsplit(self.claude_base_url)
         if (
             provider_url.scheme != "https"
@@ -86,22 +79,4 @@ class Settings(BaseSettings):
             raise ValueError("CLAUDE_BASE_URL must be an HTTPS origin without credentials or path.")
         if self.rag_embedding_model not in self.rag_allowed_embedding_models:
             raise ValueError("Default embedding model must be allowlisted.")
-        for value in [self.mock_backend_url, self.mock_callback_url]:
-            parsed = urlsplit(value)
-            if (
-                parsed.scheme != "http"
-                or parsed.hostname not in {"127.0.0.1", "localhost"}
-                or parsed.username
-                or parsed.password
-                or parsed.query
-                or parsed.fragment
-            ):
-                raise ValueError(
-                    "Connection demo URLs must be HTTP localhost URLs without credentials/query/fragment."
-                )
-        if (
-            urlsplit(self.mock_backend_url).path
-            or urlsplit(self.mock_callback_url).path != "/api/mock/replies"
-        ):
-            raise ValueError("Use backend base URL and callback path /api/mock/replies.")
         return self

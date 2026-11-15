@@ -10,17 +10,16 @@ const esc = (value) =>
   );
 const key = (value) => encodeURIComponent(value);
 const roles = {
-  student: "Học viên",
   teacher: "Giảng viên",
   admin: "Quản trị viên",
 };
 const pages = {
   overview: ["Tổng quan", "◫"],
   classes: ["Lớp học", "▦"],
-  requests: ["Yêu cầu của tôi", "↗"],
   documents: ["Học liệu", "▤"],
   tickets: ["Yêu cầu hỗ trợ", "☷"],
   users: ["Tài khoản", "♙"],
+  zalo: ["Kết nối Zalo", "↔"],
   courses: ["Khóa học", "▥"],
   reports: ["Báo cáo", "▥"],
 };
@@ -46,15 +45,14 @@ function usersPath() {
   return "/users?" + params;
 }
 const allowed = (role) =>
-  role === "student"
-    ? ["overview", "classes", "requests"]
-    : role === "teacher"
+  role === "teacher"
       ? ["overview", "classes", "documents", "tickets", "reports"]
       : [
           "overview",
           "courses",
           "classes",
           "users",
+          "zalo",
           "documents",
           "tickets",
           "reports",
@@ -298,7 +296,7 @@ async function basis() {
       ? "RAG đang bật"
       : "RAG chưa sẵn sàng hoặc đang tắt";
   state.classes = await api("/classes");
-  state.courses = state.me.role === "student" ? [] : await api("/courses");
+  state.courses = await api("/courses");
 }
 let loginOptionsSequence = 0;
 async function syncLoginProfile() {
@@ -309,32 +307,17 @@ async function syncLoginProfile() {
   $("username").required = role === "admin";
   $("login-profile-field").hidden = role === "admin";
   $("login-profile").required = role !== "admin";
-  $("login-class-field").hidden = role !== "student";
-  $("login-class").required = role === "student";
+  $("login-class-field").hidden = true;
+  $("login-class").required = false;
   $("login-profile").replaceChildren(new Option("Đang đọc hồ sơ…", ""));
   if (role === "admin") return;
   const info = await api(
     "/auth/options?role=" +
       role +
-      (role === "student" ? "&class_id=" + key($("login-class").value) : ""),
+      "",
   );
   if (sequence !== loginOptionsSequence) return;
   let profiles = info.profiles;
-  if (role === "student") {
-    const chosen = $("login-class").value;
-    $("login-class").replaceChildren(
-      ...info.classes.map((c) => new Option(c.name, c.id)),
-    );
-    if (info.classes.some((c) => c.id === chosen))
-      $("login-class").value = chosen;
-    if ($("login-class").value !== chosen) {
-      const selected = await api(
-        "/auth/options?role=student&class_id=" + key($("login-class").value),
-      );
-      if (sequence !== loginOptionsSequence) return;
-      profiles = selected.profiles;
-    }
-  }
   $("login-profile").replaceChildren(
     new Option("Chọn hồ sơ đã được cấp", ""),
     ...profiles.map((p) => {
@@ -349,7 +332,7 @@ async function syncLoginProfile() {
   $("login-description").textContent =
     role === "teacher"
       ? "Chọn hồ sơ giảng viên do admin cấp và nhập mật khẩu."
-      : "Chọn lớp, số thứ tự học viên và nhập mật khẩu được cấp.";
+      : "Nhập tên đăng nhập và mật khẩu quản trị viên.";
 }
 $("login-role").onchange = () => {
   $("password").value = "";
@@ -421,7 +404,7 @@ async function enter() {
     allowed(state.me.role).includes(desired) ? desired : "overview",
   );
   const pending = sessionStorage.getItem("gos_ingestion_job");
-  if (pending && state.me.role !== "student")
+  if (pending)
     trackIngestion(pending).catch((e) => progressFailure(e.message));
 }
 async function navigate(page) {
@@ -495,41 +478,20 @@ function ticketRows(items, own = false) {
 }
 
 const renderers = {
+  async zalo() {
+    const rows = await api("/integrations/zalo-bot/inbox");
+    return lead("Kết nối Zalo", "Nhắn hoặc tag bot để cuộc chat xuất hiện. Admin chỉ cần gắn cuộc chat với lớp một lần.") +
+      card("Tin nhắn gần đây", table(
+        ["Cuộc chat / Người gửi", "Lớp", "Kết quả", ""],
+        rows.map((r) => [
+          `${esc(r.raw_group_id)}<span class="subline">${esc(r.raw_sender_id)}</span>`,
+          `${esc(r.class_id || "Chưa gắn lớp")}`,
+          esc(r.outcome_code || r.status),
+          button("Gắn lớp", "bindZalo", r.event_key),
+        ])
+      ));
+  },
   async overview() {
-    const me = state.me;
-    if (me.role === "student") {
-      const [quota, requests] = await Promise.all([
-        api("/students/" + key(me.id) + "/quota"),
-        api("/support-requests?limit=5"),
-      ]);
-      return (
-        lead(
-          "Chào " + me.display_name + ",",
-          "Theo dõi lớp học và nhận hỗ trợ từ giảng viên.",
-          button("Gửi yêu cầu hỗ trợ", "newRequest", "", "primary"),
-        ) +
-        `<div class="metrics">${metric("Lớp đang tham gia", state.classes.length, "Các lớp bạn có quyền truy cập")}${metric("Lượt hỏi còn lại", quota.remaining, `Hạn mức ${quota.limit} lượt/ngày · làm mới theo giờ Việt Nam`)}${metric("Yêu cầu đã gửi", requests.total, "Yêu cầu trực tiếp không dùng lượt hỏi AI")}</div>` +
-        card(
-          "Yêu cầu gần đây",
-          table(
-            ["Nội dung", "Lớp", "Trạng thái", ""],
-            ticketRows(requests.items, true),
-          ),
-          `<a class="help-link" href="#requests">Xem tất cả →</a>`,
-        ) +
-        card(
-          "Lớp của bạn",
-          table(
-            ["Tên lớp", "Mã lớp", ""],
-            state.classes.map((c) => [
-              `<strong>${esc(c.name)}</strong>`,
-              esc(c.id),
-              button("Xem lớp", "classDetail", c.id),
-            ]),
-          ),
-        )
-      );
-    }
     const [open, assigned, recent, docs] = await Promise.all([
       api("/tickets?status=open&limit=1"),
       api("/tickets?status=assigned&limit=1"),
@@ -569,9 +531,7 @@ const renderers = {
     return (
       lead(
         "Lớp học",
-        state.me.role === "student"
-          ? "Các lớp bạn đang tham gia."
-          : "Quản lý thông tin và người tham gia từng lớp.",
+        "Quản lý lớp, tài liệu và giảng viên.",
         state.me.role === "admin"
           ? button("Tạo lớp", "newClass", "", "primary")
           : "",
@@ -617,7 +577,7 @@ const renderers = {
   },
   async users() {
     const rows = await api(usersPath());
-    const search = `<form class="toolbar" id="user-search"><input name="query" aria-label="Tìm tài khoản" placeholder="Tìm tên, mã tài khoản hoặc tên đăng nhập…" value="${esc(state.userQuery)}"><select name="role" aria-label="Lọc vai trò">${options([["", "Tất cả vai trò"], ["teacher", "Giảng viên"], ["student", "Học viên"], ["admin", "Quản trị viên"]], state.userRole)}</select><button class="secondary">Tìm kiếm</button>${button("Xóa bộ lọc", "clearUserSearch")}</form>`;
+    const search = `<form class="toolbar" id="user-search"><input name="query" aria-label="Tìm tài khoản" placeholder="Tìm tên, mã tài khoản hoặc tên đăng nhập…" value="${esc(state.userQuery)}"><select name="role" aria-label="Lọc vai trò">${options([["", "Tất cả vai trò"], ["teacher", "Giảng viên"], ["admin", "Quản trị viên"]], state.userRole)}</select><button class="secondary">Tìm kiếm</button>${button("Xóa bộ lọc", "clearUserSearch")}</form>`;
     return (
       lead(
         "Tài khoản",
@@ -650,26 +610,6 @@ const renderers = {
                   ),
             ]),
         ) + pager("users", undefined, rows.length > 20),
-      )
-    );
-  },
-  async requests() {
-    const data = await api(
-      `/support-requests?limit=20&offset=${state.offsets.requests || 0}`,
-    );
-    return (
-      lead(
-        "Yêu cầu hỗ trợ",
-        "Gửi câu hỏi trực tiếp và theo dõi phản hồi từ giảng viên.",
-        button("Gửi yêu cầu", "newRequest", "", "primary"),
-      ) +
-      `<div class="notice">Giảng viên sẽ phản hồi trực tiếp. Yêu cầu tại đây không gọi AI và không trừ lượt hỏi.</div>` +
-      card(
-        "Yêu cầu của bạn",
-        table(
-          ["Nội dung", "Lớp", "Trạng thái", ""],
-          ticketRows(data.items, true),
-        ) + pager("requests", data.total),
       )
     );
   },
@@ -783,79 +723,11 @@ const renderers = {
   },
 };
 
-async function newRequest(classId = "") {
-  if (!state.classes.length) return notify("Bạn chưa tham gia lớp nào.", true);
-  let requestId = crypto.randomUUID();
-  form(
-    "Gửi yêu cầu hỗ trợ",
-    [
-      {
-        name: "class_id",
-        label: "Lớp học",
-        type: "select",
-        options: classOptions(),
-        value: classId,
-      },
-      {
-        name: "question",
-        label: "Nội dung cần giảng viên hỗ trợ",
-        type: "textarea",
-        max: 8000,
-        hint: "Mô tả câu hỏi hoặc lỗi đang gặp. Không gửi mật khẩu hoặc khóa truy cập.",
-      },
-    ],
-    async (data) => {
-      await api("/support-requests", {
-        method: "POST",
-        body: {
-          class_id: data.get("class_id"),
-          question: data.get("question"),
-          client_request_id: requestId,
-        },
-      });
-      notify("Đã gửi yêu cầu cho giảng viên.");
-      state.offsets.requests = 0;
-      await navigate("requests");
-    },
-    "Gửi yêu cầu",
-  );
-}
-async function requestDetail(id) {
-  const t = await api("/support-requests/" + key(id));
-  modal(
-    "Yêu cầu #" + t.id.slice(0, 8),
-    `<div class="detail-meta">${status(t.status)}<span class="muted">${esc(t.class_name)} · ${date(t.created_at)}</span></div><div class="section-label">Nội dung của bạn</div><div class="message-box">${esc(t.question_redacted)}</div><div class="section-label">Phản hồi của giảng viên</div>${t.answer_redacted ? `<div class="message-box answer">${esc(t.answer_redacted)}</div>` : '<p class="muted">Yêu cầu đang chờ giảng viên phản hồi.</p>'}`,
-  );
-}
 async function classDetail(id) {
   const c = state.classes.find((x) => x.id === id);
   const teachers = await api("/classes/" + key(id) + "/teachers");
-  const staff = state.me.role !== "student";
-  const members = staff
-    ? await api("/classes/" + key(id) + "/members?limit=100")
-    : [];
-  modal(
-    c?.name || id,
-    `<div class="detail-meta">${status(c?.status || "active")}<span class="muted">${esc(id)}</span></div><div class="section-label">Giảng viên</div>${teachers.length ? teachers.map((t) => `<p>${esc(t.display_name)} ${status(t.assignment_active ? "active" : "suspended")}</p>`).join("") : '<p class="muted">Chưa có giảng viên được phân công.</p>'}${
-      staff
-        ? `<div class="section-label">Học viên · ${members.length}</div>${table(
-            ["STT", "Học viên", "Trạng thái", ""],
-            members.map((m) => [
-              esc(m.student_number),
-              `<strong>${esc(m.display_name)}</strong><span class="subline">${esc(m.id)}</span>`,
-              status(m.status),
-              state.me.role === "admin"
-                ? button(
-                    m.status === "active" ? "Tạm dừng" : "Cho tham gia",
-                    "toggleEnrollment",
-                    id + "|" + m.id,
-                  )
-                : "",
-            ]),
-          )}`
-        : ""
-    }<div class="dialog-toolbar">${state.me.role === "admin" ? button("Sĩ số từ metadata", "classRoster", id) + button("Thêm học viên", "addEnrollment", id) + button("Phân công giảng viên", "assignTeacher", id) + button("Liên kết nhóm", "bindGroup", id) : state.me.role === "student" ? button("Gửi yêu cầu hỗ trợ", "newRequest", id, "primary") : ""}</div>`,
-  );
+  modal(c?.name || id,
+    `<div class="detail-meta">${esc(id)}</div><div class="section-label">Giảng viên</div>${teachers.map((t) => `<p>${esc(t.display_name)}</p>`).join("")}<div class="dialog-toolbar">${state.me.role === "admin" ? button("Phân công giảng viên", "assignTeacher", id) + button("Liên kết nhóm", "bindGroup", id) : ""}</div>`);
 }
 async function documentDetail(id) {
   const d = await api("/documents/" + key(id));
@@ -882,11 +754,25 @@ async function ticketDetail(id) {
   const owner = teachers.find((u) => u.id === t.assignee_id);
   modal(
     "Yêu cầu #" + t.id.slice(0, 8),
-    `<div class="detail-meta">${status(t.status)}<span class="muted">${esc(t.class_id)} · ${date(t.created_at)}</span></div><div class="section-label">Câu hỏi từ học viên ${esc(t.student_id)}</div><div class="message-box">${esc(t.question_redacted)}</div><p class="inline-note">Phụ trách: ${esc(owner?.display_name || t.assignee_id || "Chưa phân công")}</p>${t.reply ? `<div class="section-label">Câu trả lời chính thức</div><div class="message-box answer">${esc(t.reply.answer_redacted)}</div>${t.status === "assigned" ? '<p class="inline-note">Đã lưu câu trả lời, đang chờ hệ thống ghi nhận gửi thành công.</p>' : ""}` : ""}<div class="dialog-toolbar">${["open", "assigned"].includes(t.status) && !t.reply ? button("Phân công", "assignTicket", id) + button("Trả lời", "answerTicket", id, "primary") : ""}${t.status === "answered" ? button("Đóng yêu cầu", "closeTicket", id) : ""}${["answered", "closed"].includes(t.status) ? button(t.faq ? "Xem FAQ" : "Tạo FAQ", "ticketFaq", id) : ""}</div>`,
+    `<div class="detail-meta">${status(t.status)}<span class="muted">${esc(t.class_id)} · ${date(t.created_at)}</span></div><div class="section-label">Câu hỏi từ cuộc chat</div><div class="message-box">${esc(t.question_redacted)}</div><p class="inline-note">Phụ trách: ${esc(owner?.display_name || t.assignee_id || "Chưa phân công")}</p>${t.reply ? `<div class="section-label">Câu trả lời chính thức</div><div class="message-box answer">${esc(t.reply.answer_redacted)}</div>${t.status === "assigned" ? '<p class="inline-note">Đã lưu câu trả lời, đang chờ hệ thống ghi nhận gửi thành công.</p>' : ""}` : ""}<div class="dialog-toolbar">${["open", "assigned"].includes(t.status) && !t.reply ? button("Phân công", "assignTicket", id) + button("Trả lời", "answerTicket", id, "primary") : ""}${t.status === "answered" ? button("Đóng yêu cầu", "closeTicket", id) : ""}${["answered", "closed"].includes(t.status) ? button(t.faq ? "Xem FAQ" : "Tạo FAQ", "ticketFaq", id) : ""}</div>`,
   );
 }
 
 const actions = {
+  bindZalo: async (eventKey) => {
+    const rows = await api("/integrations/zalo-bot/inbox");
+    const row = rows.find((r) => r.event_key === eventKey);
+    if (!row) throw Error("Hãy tải lại danh sách cuộc chat.");
+    const classes = await api("/classes");
+    form("Chọn lớp cho cuộc chat Zalo", [
+      {name: "class_id", label: "Lớp", type: "select", options: classes.map((c) => [c.id, c.name + " · " + c.id])},
+    ], async (data) => {
+      const classId = data.get("class_id");
+      await api("/integrations/zalo-bot/bindings", {method: "POST", body: {class_id: classId, chat_id: row.raw_group_id}});
+      notify("Đã gắn lớp. Mọi người trong cuộc chat có thể hỏi bot.");
+      await navigate("zalo");
+    }, "Gắn lớp");
+  },
   clearUserSearch: async () => {
     state.userQuery = "";
     state.userRole = "";
@@ -902,8 +788,6 @@ const actions = {
     state.offsets[id] = (state.offsets[id] || 0) + 20;
     return navigate(id);
   },
-  newRequest,
-  requestDetail,
   classDetail,
   documentDetail,
   ticketDetail,
@@ -941,7 +825,6 @@ const actions = {
           type: "select",
           value: "teacher",
           options: [
-            ["student", "Học viên"],
             ["teacher", "Giảng viên"],
             ["admin", "Quản trị viên"],
           ],
@@ -1095,22 +978,14 @@ const actions = {
           type: "select",
           options: state.courses.map((c) => [c.id, c.name]),
         },
-        {
-          name: "student_count",
-          label: "Sĩ số theo metadata",
-          type: "number",
-          required: false,
-          hint: "Để trống nếu chưa có danh sách; nhập 49 để tạo STT 1–49.",
-        },
       ],
       async (data) => {
         const body = Object.fromEntries(data);
-        body.student_count = Number(body.student_count || 0);
         await api("/classes", {
           method: "POST",
           body,
         });
-        notify("Đã tạo lớp. Mở chi tiết để thêm học viên và liên kết nhóm.");
+        notify("Đã tạo lớp. Mở chi tiết để phân công giảng viên và liên kết nhóm.");
         await navigate("classes");
       },
       "Tạo lớp",
@@ -1124,67 +999,6 @@ const actions = {
     });
     notify("Đã cập nhật cấu hình bot của lớp.");
     await navigate("classes");
-  },
-  classRoster: (id) =>
-    form(
-      "Danh sách học viên từ metadata lớp",
-      [
-        {
-          name: "student_count",
-          label: "Sĩ số lớp",
-          type: "number",
-          hint: "Ví dụ 49: tạo đủ danh sách STT 1–49. Không xóa học viên hoặc đặt lại STT đã có.",
-        },
-      ],
-      async (data) => {
-        await api("/classes/" + key(id) + "/roster", {
-          method: "PUT",
-          body: { student_count: Number(data.get("student_count")) },
-        });
-        notify(
-          "Đã cập nhật danh sách theo metadata lớp. Tài khoản đăng nhập được cấp riêng.",
-        );
-        await classDetail(id);
-      },
-      "Cập nhật danh sách",
-    ),
-  addEnrollment: async (id) => {
-    const users = (await api("/users?limit=100")).filter(
-      (u) => u.role === "student" && u.is_active,
-    );
-    if (!users.length)
-      return notify("Chưa có tài khoản học viên khả dụng.", true);
-    form(
-      "Thêm học viên vào lớp",
-      [
-        {
-          name: "student_id",
-          label: "Học viên",
-          type: "select",
-          options: users.map((u) => [u.id, u.display_name + " · " + u.id]),
-        },
-      ],
-      async (data) => {
-        await api(
-          "/classes/" + key(id) + "/members/" + key(data.get("student_id")),
-          { method: "PUT", body: { status: "active" } },
-        );
-        notify("Đã thêm học viên vào lớp.");
-        await classDetail(id);
-      },
-      "Thêm học viên",
-    );
-  },
-  toggleEnrollment: async (value) => {
-    const [cid, student] = value.split("|");
-    const rows = await api("/classes/" + key(cid) + "/members?limit=100");
-    const member = rows.find((r) => r.id === student);
-    await api("/classes/" + key(cid) + "/members/" + key(student), {
-      method: "PUT",
-      body: { status: member.status === "active" ? "suspended" : "active" },
-    });
-    notify("Đã cập nhật quyền tham gia lớp.");
-    await classDetail(cid);
   },
   assignTeacher: async (id) => {
     const users = (await api("/users?limit=100")).filter(
@@ -1229,7 +1043,7 @@ const actions = {
     form(
       "Liên kết nhóm nhận phản hồi",
       [
-        { name: "external_group_id", label: "Mã nhóm giả lập", max: 200 },
+        { name: "external_group_id", label: "ID cuộc chat Zalo", max: 200 },
         { name: "display_name", label: "Tên nhóm", max: 200 },
       ],
       async (data) => {
@@ -1404,7 +1218,7 @@ const actions = {
           label: "Câu trả lời chính thức",
           type: "textarea",
           max: 12000,
-          hint: "Câu trả lời sẽ được lưu và hiển thị cho học viên sau khi gửi thành công.",
+          hint: "Câu trả lời sẽ được gửi về cuộc chat đã tạo yêu cầu.",
         },
       ],
       async (data) => {
@@ -1487,7 +1301,6 @@ $("login-form").onsubmit = async (e) => {
     if (state.setupRequired) body.display_name = $("setup-name").value;
     else {
       body.role = $("login-role").value;
-      if (body.role === "student") body.class_id = $("login-class").value;
     }
     await api(state.setupRequired ? "/auth/setup" : "/auth/login", {
       method: "POST",
