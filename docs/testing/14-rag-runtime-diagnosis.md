@@ -1,6 +1,6 @@
 # Đối chiếu các câu /hoi bị chặn và sửa query context
 
-Kiểm tra ngày 11/11/2026 bằng event/call audit trong SQLite và snapshot Qdrant local. Không suy số lần gọi provider từ số callback hoặc HTTP 202.
+Kiểm tra ngày 11/11/2026 bằng event/call audit trong SQLite và snapshot Qdrant local. Không suy số lần gọi provider từ số lần gửi tin hoặc HTTP 202.
 
 ## Từng trường hợp người dùng cung cấp
 
@@ -47,15 +47,3 @@ Cấu hình mới: `RAG_REVIEW_SCORE_FLOOR=0.02`, `RAG_REVIEW_VECTOR_FLOOR=0.35`
 Đánh giá đầy đủ bằng `scripts/evaluate_rag.py` nay mặc định dùng `data/rag-evaluation` riêng và tài khoản ML-EVAL-STUDENT. `--data-dir` cho phép chọn thư mục riêng khác. `--import-only` vẫn nạp corpus vào DB được cấu hình để phục vụ thao tác nhập tài liệu, không chạy câu hỏi; các request đánh giá có prefix request_id `evaluation-` để nhận biết.
 
 Các event đã bị quota chặn vẫn giữ nguyên kết quả cũ để bảo đảm idempotency. Sau khởi động lại, gửi **tin mới/event ID mới**, không bấm gửi lại event quota_exceeded cũ để mong nó chạy lại RAG.
-
-## Tiến trình không đánh đồng callback với RAG
-
-Callback nghiệp vụ được ký HMAC kèm `processing`: outcome_code, retrieval_called, llm_called và label. Quota/rate limit/quyền bị chặn trả 0%, ghi rõ chưa vào RAG. Trả lời có LLM và chuyển giảng viên được phân biệt. GET event progress cũng có kết quả tương ứng. Callback kết nối thuần vẫn có trạng thái nhận phản hồi nhưng không tuyên bố đã chạy RAG.
-
-## Kiểm tra sau sửa
-
-- 109 test tự động: câu hỏi mới không thừa hưởng chủ đề cũ; câu hỏi tiếp nối vẫn dùng memory; nguồn sát ngưỡng được xét lại; nguồn quá yếu không gọi provider; callback quota có percent=0, retrieval_called=false, llm_called=false.
-- Chạy thật trên snapshot với Sonnet 4.6: `thuât toán hồi quy là gì` trả answered với nguồn L3 trang 5; `Machine Learning là gì` sau câu hồi quy trả answered với 3 citations. Không sử dụng quota live cho hai ca xác minh.
-- Kết quả: `data/exports/rag-current-query-diagnosis.json`, `rag-query-fix-live-check.json`, `evaluation-quota-correction.json`.
-
-Cần khởi động lại `scripts/run_rag.py` để Python nạp logic mới. Dữ liệu đang active được giữ nguyên; không cần tải lại 14 PDF.
